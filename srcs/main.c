@@ -2,16 +2,27 @@
 #include <stdio.h>
 #include <ft_malloc.h>
 #include <parse_arg.h>
+#include <unistd.h>
+#include <ft_nmap.h>
 
 int main(int argc, char **argv)
 {
-    int flags = 0;
+    nmap_context context;
+    // int flags = 0;
     // void *encrypt = NULL;
     // algorithms algorithm = NONE;
 
-    // if (argc < 2) usage(0);
+    if (argc < 2) return 1;//usage(0);
+    
+    (void)argv;
 
-    parse_args(argc, argv, &flags, &encrypt, &algorithm);
+    if (geteuid() != 0)
+    {
+        fprintf(stderr, "This program requires root privileges.\n");
+        return 1;
+    }
+
+    parse_args(argc, argv, &context);
 
     return 0;
 }

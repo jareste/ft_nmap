@@ -1,107 +1,257 @@
-#include <ft_malloc.h>
-#include <stdlib.h>
-#include <ft_list.h>
+#include "ft_list.h"
+#include "error_codes.h"
+#include <stddef.h>
 
-list_t* list_get_next(list_t *node)
+int ft_list_add_last(void** _head, void* _node)
 {
-    if (node == NULL) return NULL;
-    return node->next;
+    list_item_t** head = (list_item_t**)_head;
+    list_item_t* node = (list_item_t*)_node;
+    list_item_t* last;
+
+    if (!head || !node) return (INVALID_ARGS);
+
+    if (!*head)
+    {
+        *head = node;
+        node->next = node;
+        node->prev = node;
+        return (OK);
+    }
+
+    last = (*head)->prev;
+    last->next = node;
+    node->prev = last;
+    node->next = *head;
+    (*head)->prev = node;
+    
+    return (OK);
 }
 
-void list_add_last(list_t **head, char *data, char *procedence, input_type type)
+int ft_list_add_first(void** _head, void* _node)
 {
-    if (data == NULL || procedence == NULL) return;
-    
-    list_t *new_node = malloc(sizeof(list_t));
-    new_node->node.data = strdup(data);
-    new_node->node.procedence = strdup(procedence);
-    new_node->node.type = type;
-    new_node->next = NULL;
+    list_item_t** head = (list_item_t**)_head;
+    list_item_t* node = (list_item_t*)_node;
+    list_item_t* first;
 
-    if (*head == NULL)
+    if (!head || !node)
     {
-        *head = new_node;
+        return (INVALID_ARGS);
+    }
+
+    if (!*head)
+    {
+        (*head)->next = node;
+        (*head)->prev = node;
+        return (OK);
+    }
+
+    first = *head;
+    while (first->prev != *head)
+    {
+        first = first->prev;
+    }
+
+    first->prev = node;
+    node->next = first;
+    
+    return (OK);
+}
+
+void* ft_list_get_next(void** _head, void* _node)
+{
+    list_item_t** head = (list_item_t**)_head;
+    list_item_t* node = (list_item_t*)_node;
+
+    if (!head || !node)
+    {
+        return (NULL);
+    }
+
+    if (!*head)
+    {
+        return (NULL);
+    }
+
+    if (node->next == *head)
+    {
+        return (NULL);
+    }
+
+    return (node->next);
+}
+
+void* ft_list_get_prev(void** _head, void* _node)
+{
+    list_item_t** head = (list_item_t**)_head;
+    list_item_t* node = (list_item_t*)_node;
+
+    if (!head || !node)
+    {
+        return (NULL);
+    }
+
+    if (!*head)
+    {
+        return (NULL);
+    }
+
+    if (node->prev == *head)
+    {
+        return (NULL);
+    }
+
+    return (node->prev);
+}
+
+int ft_list_pop(void** _head, void* _node)
+{
+    list_item_t** head = (list_item_t**)_head;
+    list_item_t* node = (list_item_t*)_node;
+    list_item_t* prev;
+    list_item_t* next;
+
+    if (!head || !node || !*head)
+    {
+        return (INVALID_ARGS);
+    }
+
+    prev = node->prev;
+    next = node->next;
+
+    if (node == node->next && node == node->prev)
+    {
+        *head = NULL;
     }
     else
     {
-        list_t *current = *head;
-        while (current->next != NULL)
+        prev->next = next;
+        next->prev = prev;
+
+        if (*head == node)
         {
-            current = current->next;
+            *head = next;
         }
-        current->next = new_node;
     }
+
+    node->next = NULL;
+    node->prev = NULL;
+
+    return (OK);
 }
 
-void list_remove_single(list_t **head, list_t *node_to_remove)
+int ft_list_pop_first(void** _head)
 {
-    if (*head == NULL || node_to_remove == NULL) return;
+    return (ft_list_pop(_head, ft_list_get_first(_head)));
+}
 
-    if (*head == node_to_remove)
+int ft_list_pop_last(void** _head)
+{
+    return (ft_list_pop(_head, ft_list_get_last(_head)));
+}
+
+int ft_list_get_size(void** _head)
+{
+    list_item_t** head = (list_item_t**)_head;
+    list_item_t* current;
+    int size;
+
+    if (!head)
     {
-        list_t *temp = *head;
-        *head = (*head)->next;
-        free(temp->node.data);
-        free(temp);
-        return;
+        return (0);
     }
 
-    list_t *current = *head;
-    while (current->next != NULL && current->next != node_to_remove)
+    if (!*head)
     {
+        return (0);
+    }
+
+    current = *head;
+    size = 0;
+    do
+    {
+        size++;
         current = current->next;
+    } while (current != *head);
+
+    return (size);
+}
+
+void* ft_list_get_first(void** _head)
+{
+    list_item_t** head = (list_item_t**)_head;
+    list_item_t* first;
+
+    if (!head)
+    {
+        return (NULL);
     }
 
-    if (current->next == node_to_remove)
+    if (!*head)
     {
-        list_t *temp = current->next;
-        current->next = temp->next;
-        free(temp->node.data);
-        free(temp);
-    }
-}
-
-char* get_data(list_t *node)
-{
-    return node->node.data;
-}
-
-char* get_procedence(list_t *node)
-{
-    return node->node.procedence;
-}
-
-input_type get_type(list_t *node)
-{
-    return node->node.type;
-}
-
-void list_clear(list_t **head)
-{
-    list_t *current = *head;
-    list_t *next_node;
-
-    while (current != NULL)
-    {
-        next_node = current->next;
-        free(current->node.data);
-        free(current->node.procedence);
-        free(current);
-        current = next_node;
+        return (NULL);
     }
 
-    *head = NULL;
+    first = *head;
+    while (first->prev != *head)
+    {
+        first = first->prev;
+    }
+
+    return (first);
 }
 
-
-#include <stdio.h>
-void list_print(list_t *head)
+void* ft_list_get_last(void** _head)
 {
-    list_t *current = head;
-    while (current != NULL)
+    list_item_t** head = (list_item_t**)_head;
+    list_item_t* last;
+
+    if (!head)
     {
-        printf("%s -> ", current->node.data);
+        return (NULL);
+    }
+
+    if (!*head)
+    {
+        return (NULL);
+    }
+
+    last = *head;
+    while (last->next != *head)
+    {
+        last = last->next;
+    }
+
+    return (last);
+}
+
+int ft_list_find_node(void** _head, void* _node)
+{
+    list_item_t** head = (list_item_t**)_head;
+    list_item_t* node = (list_item_t*)_node;
+    list_item_t* current;
+    int index;
+
+    if (!head || !node)
+    {
+        return (INVALID_ARGS);
+    }
+
+    if (!*head)
+    {
+        return (INVALID_ARGS);
+    }
+
+    current = *head;
+    index = 0;
+    do
+    {
+        if (current == node)
+        {
+            return (index);
+        }
+        index++;
         current = current->next;
-    }
-    printf("NULL\n");
+    } while (current != *head);
+
+    return (FAILURE);
 }

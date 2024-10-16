@@ -9,7 +9,7 @@ RELEASE_CFLAGS = $(CFLAGS) -DNDEBUG
 #########
 
 #########
-FILES = main md5 ft_malloc parse_arg sha256 ft_list utils whirlpool blake2s base64
+FILES = main ft_malloc parse_arg ft_list 
 
 SRC = $(addsuffix .c, $(FILES))
 
@@ -25,7 +25,7 @@ DEP = $(addsuffix .d, $(basename $(OBJ)))
 #########
 $(OBJ_DIR)/%.o: %.c
 	@mkdir -p $(@D)
-	${CC} -MMD $(CFLAGS) -c -Isrcs/md5 -Iinc -Isrcs/parse_arg -Isrcs/sha256 -Isrcs/utils -Isrcs/whirlpool -Isrcs/blake2s -Isrcs/base64 $< -o $@
+	${CC} -MMD $(CFLAGS) -c -Isrcs/nmap -Iinc -Isrcs/parse_arg  $< -o $@
 
 all: 
 	$(MAKE) $(NAME)

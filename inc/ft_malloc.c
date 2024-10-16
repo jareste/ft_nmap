@@ -9,15 +9,19 @@
 
 void* ft_malloc(size_t size)
 {
+#undef malloc
     void *ptr = malloc(size);
     ft_assert(ptr != NULL, "malloc failed");
+#define malloc(x) ft_malloc(x)
     return ptr;
 }
 
 void* ft_realloc(void *ptr, size_t size)
 {
+#undef realloc
     void* new_ptr = realloc(ptr, size);
     ft_assert(new_ptr != NULL, "realloc failed");
+#define realloc(x, y) ft_realloc(x, y)
     return new_ptr;
 }
 

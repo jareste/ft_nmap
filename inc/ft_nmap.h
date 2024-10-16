@@ -16,14 +16,26 @@ typedef enum {
 } bool;
 
 typedef enum {
-    SYN,
-    NULL,
-    ACK,
-    FIN,
-    XMAS,
-    UDP,
-    NONE
-} scan_type;
+    S_SYN = 1,
+    S_NULL = 2,
+    S_FIN = 3,
+    S_XMAS = 4,
+    S_ACK = 5,
+    S_UDP = 6,
+    NONE = 7
+} ScanType;
 
+
+typedef struct { /* useless? */
+    const char* name;
+    ScanType   scan;
+} dst_ip_entry;
+
+typedef struct {
+    char        *dst_ip;
+    int         port_range[2];
+    int         flags;
+    ScanType   type;
+} nmap_context;
 
 #endif
