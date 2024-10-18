@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <ft_nmap.h>
 #include <nmap_api.h>
+#include <error_codes.h>
 
 int main(int argc, char **argv)
 {
@@ -16,10 +17,10 @@ int main(int argc, char **argv)
     if (geteuid() != 0)
     {
         fprintf(stderr, "This program requires root privileges.\n");
-        return 1;
+        return FAILURE;
     }
 
-    if (argc < 2) return 1;//usage(0);
+    if (argc < 2) FT_NMAP_USAGE(FAILURE);
 
 
     parse_args(argc, argv, &context);

@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <ft_nmap.h>
 #include <getopt.h>
+#include <error_codes.h>
 
 /***************************/
 /*        DEFINES          */
@@ -106,82 +107,109 @@ static const scan_entry g_scans[] = {
 //     *encrypt = buffer;
 // }
 
-/* TODO
-    validate format 'XXXX - XXXX'
-    validate range pos0 < pos1
-
-*/
-void get_ports(char* arg, nmap_context* ctx)
+void parse_file(const char *file_path, nmap_context* ctx)
 {
-    char* number;
-    int i = 0;
+    FILE *file = fopen(file_path, "r");
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read;
+    target_t*   target = NULL;
 
-    /* TODO check to remove spaces '7            -             9' */
-    number = strtok(arg, "-");
-    if (number == NULL)
-    /* TODO ASSERT*/
-        printf("I will assert!!!\n");
-    for (i = 0; number[i]; i++)
-        if (!isdigit(number[i]) || (i > 3)) /*TOOD ASSERT */ printf("I will assert!!!\n");
+    if (file == NULL)
+    {
+        perror("Error opening file");
+        return;
+    }
 
-    ctx->port_range[0] = atoi(number);
-    /* todo check max port number and negative */
+    fseek(file, 0, SEEK_END);
+    if (ftell(file) == 0)
+    {
+        printf("The file is empty.\n");
+        fclose(file);
+        return;
+    }
+    rewind(file);
 
-    number = strtok(NULL, "-");
-    if (number == NULL)
-    /* TODO ASSERT*/
-        printf("I will assert!!!\n");
+    while ((read = getline(&line, &len, file)) != -1)
+    {
+        if ((read == 1) && (line[0] == '\n'))
+            continue;
+        if (line[read - 1] == '\n')
+            line[read - 1] = '\0';
+        target = malloc(sizeof(target_t));
+        target->address = strdup(line);
+        FT_LIST_ADD_LAST(&ctx->dst, target);
+    }
 
-    for (i = 0; number[i]; i++)
-        if (!isdigit(number[i]) || (i > 3)) /*TOOD ASSERT */ printf("I will assert!!!\n");
-
-    ctx->port_range[1] = atoi(number);
-
-    number = strtok(NULL, "-");
-    if (number)
-    /* TODO ASSERT*/
-        printf("I will assert!!!\n");
-
-    printf("port range %d-%d\n", ctx->port_range[0], ctx->port_range[1]);
-
-
+    free(line);
+    fclose(file);
 }
 
+void get_ports(char *arg, nmap_context *ctx)
+{
+    char*   number;
+    int     i;
+    int     port1;
+    int     port2;
+    
+    number = strtok(arg, "-");
+    ft_assert(number, "ft_nmap: Fatal error: Invalid port range format. Format 'X-X'\n");
+    
+    for (i = 0; number[i]; i++)
+        ft_assert(isdigit(number[i]), "ft_nmap: Fatal error: Invalid port range format 'X-X'. Non-digit characters found.\n");
 
-/* this will assert */
+    port1 = atoi(number);
+
+    ft_assert(port1 > 0 && port1 <= 1024, "ft_nmap: Fatal error: Invalid port range. Ports must be between 1 and 1024.\n");
+
+    number = strtok(NULL, "-");
+    ft_assert(number, "ft_nmap: Fatal error: Invalid port range format. Missing second port. Format 'X-X'\n");
+    
+    for (i = 0; number[i]; i++)
+        ft_assert(isdigit(number[i]), "ft_nmap: Fatal error: Invalid port range format. Non-digit characters found.\n");
+        
+    port2 = atoi(number);
+
+    ft_assert(port2 > 0 && port2 <= 1024, "ft_nmap: Fatal error: Invalid port range. Ports must be between 1 and 1024.\n");
+    ft_assert(port1 < port2, "ft_nmap: Fatal error: Invalid port range. The first port must be less than the second port.\n");
+
+    ctx->port_range[0] = port1;
+    ctx->port_range[1] = port2;
+
+    printf("Valid port range: %d-%d\n", ctx->port_range[0], ctx->port_range[1]);
+}
+
 void get_scans(char* arg, nmap_context* ctx)
 {
-    /*
-        TODO review
-    */
+    /* should never happen */
+    ft_assert(arg, "ft_nmap: Fatal error: argument is NULL.\n");
+    ft_assert(ctx, "ft_nmap: Fatal error: context is NULL.\n");
+
     char* scan = NULL;
     int i = 0;
 
     scan = strtok(arg, ",");
     while (scan)
     {
-        for (i = 0; (get_scan_name(i) != NULL) && (strcmp(scan, get_scan_name(i)) != 0);i++)
+        for (i = 0; (get_scan_name(i) != NULL) && (strcmp(scan, get_scan_name(i)) != 0); i++)
             ;
-        
+
         if (get_scan_name(i))
             ctx->scans |= get_scan_scan(i);
         else
-            /*TODO assert*/
-            printf("'%s' scan type not found or invalid\n", scan);
+            ft_assert(0, "ft_nmap: Fatal error: scan type not found or invalid.\n");
 
         scan = strtok(NULL, ",");
     }
 
     if (ctx->scans == 0)
-        /*ASSERT!!!*/
-        printf("no scan found!!!\n");
-    else
-        printf("scan found\n");
+        ft_assert(0, "ft_nmap: Fatal error: no scan found, please provide a valid scan type.\n");
 }
 
 void parse_args(int argc, char *argv[], nmap_context* ctx)
 {
-    int opt;
+    int         opt;
+    target_t*   target = NULL;
 
     /* TODO review*/
     memset(ctx, 0, sizeof(nmap_context));
@@ -202,18 +230,22 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
         {
             case '?':
             case 'h':
+                FT_NMAP_USAGE(EXIT_SUCCESS);
                 // print_usage(*algorithm, EXIT_SUCCESS);
                 exit(0);
             case 'p': /* port */
-                /* TODO set the port range, if it's set twice assert */
+                ctx->flags |= FLAG_PORTS;
                 get_ports(optarg, ctx);
-                // *flags |= P_FLAG;
                 break;
             case 'i': /* ip */
-                /* TODO add to scan list */
-                // *flags |= Q_FLAG;
+                printf("IP: %s\n", optarg);
+                ft_assert(optarg, "ft_nmap: Fatal error: Invalid target IP.\n");
+                target = malloc(sizeof(target_t));
+                target->address = strdup(optarg);
+                FT_LIST_ADD_LAST(&ctx->dst, target);
                 break;
-            case 'r': /* file */
+            case 'f': /* file */
+                parse_file(optarg, ctx);
                 // *flags |= R_FLAG;
                 break;
             case 's': /* scan */
@@ -228,16 +260,29 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
                 }
                 break;
             case 0: /* speedup */
-                if (strcmp("speedup", long_options[optind-1].name) == 0)
-                {
-                    printf("Speedup option with value %s\n", optarg);
-                }
+                ctx->flags |= FLAG_SPEED;
+                ft_assert(optarg, "ft_nmap: Fatal error: Invalid speedup value. Must be a number.\n");
+                
+                for (int k = 0; optarg[k]; k++)
+                    ft_assert(isdigit(optarg[k]), "ft_nmap: Fatal error: Invalid speedup value. Must be a number.\n");
+                
+                ctx->speedup = atoi(optarg);
+                
                 break;
             default:
-                // print_usage(*algorithm, EXIT_FAILURE);
-                exit(1);
+                FT_NMAP_USAGE(EXIT_SUCCESS);
         }
     }
+
+    if (ctx->dst == NULL) {fprintf(stderr, "ft_ssl: No scan dst provided.\n"); FT_NMAP_USAGE(FAILURE);}
+
+    target_t *tmp = ctx->dst;
+    while (tmp)
+    {
+        printf("Target: %s\n", tmp->address);
+        tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
+    }
+
 
     // stdin_buffer = NULL;
     // for (int i = optind+1; i < argc; i++)

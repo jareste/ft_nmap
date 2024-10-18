@@ -371,7 +371,7 @@ int nmap_main(nmap_context* ctx)
     //     return -1;
     // }
 
-    const char *target_ip = ctx->target;
+    const char *target_ip = ctx->dst->address;
     char *source_ip = malloc(INET_ADDRSTRLEN);
     get_local_ip(&source_ip);  // Get the local IP dynamically
 
