@@ -12,6 +12,7 @@
 #include <sys/select.h>
 
 #include <ft_nmap.h>
+#include <nmap_api.h>
 
 #define PCKT_LEN 8192
 #define MAX_PORTS 1024
@@ -155,11 +156,13 @@ void send_packets(int sock, const char *target_ip, const char *source_ip, int sc
     }
 }
 
+static const char* services[] ={
+    "HTTP", "SSH", "SMTP", "MySQL", "PostgreSQL", "FTP", "Telnet", "POP3", NULL
+};
+
+
 const char* identify_service_from_banner(const char* banner)
 {
-    const char services[][] = {
-        "HTTP", "SSH", "SMTP", "MySQL", "PostgreSQL", "FTP", "Telnet", "POP3", NULL
-    };
 
     for (int i = 0; services[i] != NULL; i++)
     {
@@ -359,20 +362,20 @@ void get_local_ip(char **ip)
     close(temp_sock);
 }
 
-int main(int argc, char *argv[])
+int nmap_main(nmap_context* ctx)
 {
-    if (argc != 3)
-    {
-        printf("Usage: %s <target IP> <scan type>\n", argv[0]);
-        printf("Scan types: 1=SYN, 2=NULL, 3=FIN, 4=XMAS, 5=ACK\n");
-        return -1;
-    }
+    // if (argc != 3)
+    // {
+    //     printf("Usage: %s <target IP> <scan type>\n", argv[0]);
+    //     printf("Scan types: 1=SYN, 2=NULL, 3=FIN, 4=XMAS, 5=ACK\n");
+    //     return -1;
+    // }
 
-    const char *target_ip = argv[1];
+    const char *target_ip = ctx->target;
     char *source_ip = malloc(INET_ADDRSTRLEN);
     get_local_ip(&source_ip);  // Get the local IP dynamically
 
-    int scan_type = atoi(argv[2]);
+    int scan_type = atoi("3");
 
     int sock;
 
@@ -414,3 +417,62 @@ int main(int argc, char *argv[])
     close(sock);
     return 0;
 }
+
+
+
+
+// int main(int argc, char *argv[])
+// {
+//     if (argc != 3)
+//     {
+//         printf("Usage: %s <target IP> <scan type>\n", argv[0]);
+//         printf("Scan types: 1=SYN, 2=NULL, 3=FIN, 4=XMAS, 5=ACK\n");
+//         return -1;
+//     }
+
+//     const char *target_ip = argv[1];
+//     char *source_ip = malloc(INET_ADDRSTRLEN);
+//     get_local_ip(&source_ip);  // Get the local IP dynamically
+
+//     int scan_type = atoi(argv[2]);
+
+//     int sock;
+
+//     printf("Scanning target %s from source %s\n", target_ip, source_ip);
+//     // Create a raw socket
+//     sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+//     if (sock < 0)
+//     {
+//         perror("Socket creation failed");
+//         return -1;
+//     }
+
+//     int ports_status[MAX_PORTS];
+//     for (int i = 0; i < MAX_PORTS; i++) {
+//         ports_status[i] = -1;
+//     }
+
+//     // Set IP_HDRINCL to tell the kernel that headers are included in the packet
+//     int one = 1;
+//     if (setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0)
+//     {
+//         perror("Setting IP_HDRINCL failed");
+//         return -1;
+//     }
+
+//     send_packets(sock, target_ip, source_ip, scan_type, 1, MAX_PORTS);
+
+//     // Wait for responses asynchronously
+//     receive_responses(sock, target_ip, ports_status, scan_type);
+
+//     for (int port = 1; port <= MAX_PORTS; port++)
+//     {
+//         if (ports_status[port] == 1)
+//         {
+//             banner_grab(target_ip, port);
+//         }
+//     }
+
+//     close(sock);
+//     return 0;
+// }

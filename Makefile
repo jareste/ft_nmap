@@ -9,11 +9,11 @@ RELEASE_CFLAGS = $(CFLAGS) -DNDEBUG
 #########
 
 #########
-FILES = main ft_malloc parse_arg ft_list 
+FILES = main ft_malloc parse_arg ft_list nmap
 
 SRC = $(addsuffix .c, $(FILES))
 
-vpath %.c srcs srcs/md5 inc srcs/parse_arg srcs/sha256 srcs/utils srcs/whirlpool srcs/blake2s srcs/base64
+vpath %.c srcs inc srcs/parse_arg srcs/nmap 
 #########
 
 #########
@@ -25,7 +25,7 @@ DEP = $(addsuffix .d, $(basename $(OBJ)))
 #########
 $(OBJ_DIR)/%.o: %.c
 	@mkdir -p $(@D)
-	${CC} -MMD $(CFLAGS) -c -Isrcs/nmap -Iinc -Isrcs/parse_arg  $< -o $@
+	${CC} -MMD $(CFLAGS) -c -Isrcs/nmap -Iinc -Isrcs/parse_arg -Isrcs/nmap $< -o $@
 
 all: 
 	$(MAKE) $(NAME)
@@ -33,7 +33,7 @@ all:
 $(NAME): $(OBJ) Makefile
 	$(CC) $(CFLAGS) $(OBJ) -o $(NAME) $(LDFLAGS)
 	@echo "EVERYTHING DONE  "
-	@./.add_path.sh
+#	@./.add_path.sh
 
 release: CFLAGS = $(RELEASE_CFLAGS)
 release: re

@@ -40,79 +40,152 @@ static const scan_entry g_scans[] = {
 /*        METHODS          */
 /***************************/
 
-static void read_file(const char *filename, char **content)
+// static void read_file(const char *filename, char **content)
+// {
+//     if (access(filename, F_OK) != 0)
+//     {
+//         fprintf(stderr, "ft_ssl: %s: No such file or directory\n", filename);
+//         return;
+//     }
+
+//     if (access(filename, R_OK) != 0)
+//     {
+//         fprintf(stderr, "ft_ssl: %s: Permission denied\n", filename);
+//         return;
+//     }
+
+//     FILE *file = fopen(filename, "rb");
+//     if (!file)
+//     {
+//         fprintf(stderr, "ft_ssl: %s: %s\n", filename, strerror(errno));
+//         /* NEVER HERE */
+//         ft_assert(file, "Fatal error: Could not open file.");
+//     }
+
+//     fseek(file, 0, SEEK_END);
+//     long file_size = ftell(file);
+//     fseek(file, 0, SEEK_SET);
+
+//     *content = malloc(file_size + 1);
+
+//     size_t read_size = fread(*content, 1, file_size, file);
+//     if (read_size != (size_t)file_size)
+//     {
+//         perror("Error reading file");
+//         free(*content);
+//         fclose(file);
+//         exit(EXIT_FAILURE);
+//     }
+
+//     (*content)[file_size] = '\0';
+
+//     fclose(file);
+// }
+
+
+// static void read_stdin(char **encrypt)
+// {
+//     size_t buffer_size = 1024;
+//     size_t total_size = 0;
+//     char *buffer = malloc(buffer_size);
+//     int c;
+
+//     while ((c = getchar()) != EOF)
+//     {
+//         if (total_size + 1 >= buffer_size)
+//         {
+//             buffer_size *= 2;
+//             char *new_buffer = realloc(buffer, buffer_size);
+//             buffer = new_buffer;
+//         }
+//         buffer[total_size++] = (char)c;
+//     }
+
+//     buffer[total_size] = '\0';
+
+//     *encrypt = buffer;
+// }
+
+/* TODO
+    validate format 'XXXX - XXXX'
+    validate range pos0 < pos1
+
+*/
+void get_ports(char* arg, nmap_context* ctx)
 {
-    if (access(filename, F_OK) != 0)
-    {
-        fprintf(stderr, "ft_ssl: %s: No such file or directory\n", filename);
-        return;
-    }
+    char* number;
+    int i = 0;
 
-    if (access(filename, R_OK) != 0)
-    {
-        fprintf(stderr, "ft_ssl: %s: Permission denied\n", filename);
-        return;
-    }
+    /* TODO check to remove spaces '7            -             9' */
+    number = strtok(arg, "-");
+    if (number == NULL)
+    /* TODO ASSERT*/
+        printf("I will assert!!!\n");
+    for (i = 0; number[i]; i++)
+        if (!isdigit(number[i]) || (i > 3)) /*TOOD ASSERT */ printf("I will assert!!!\n");
 
-    FILE *file = fopen(filename, "rb");
-    if (!file)
-    {
-        fprintf(stderr, "ft_ssl: %s: %s\n", filename, strerror(errno));
-        /* NEVER HERE */
-        ft_assert(file, "Fatal error: Could not open file.");
-    }
+    ctx->port_range[0] = atoi(number);
+    /* todo check max port number and negative */
 
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    number = strtok(NULL, "-");
+    if (number == NULL)
+    /* TODO ASSERT*/
+        printf("I will assert!!!\n");
 
-    *content = malloc(file_size + 1);
+    for (i = 0; number[i]; i++)
+        if (!isdigit(number[i]) || (i > 3)) /*TOOD ASSERT */ printf("I will assert!!!\n");
 
-    size_t read_size = fread(*content, 1, file_size, file);
-    if (read_size != (size_t)file_size)
-    {
-        perror("Error reading file");
-        free(*content);
-        fclose(file);
-        exit(EXIT_FAILURE);
-    }
+    ctx->port_range[1] = atoi(number);
 
-    (*content)[file_size] = '\0';
+    number = strtok(NULL, "-");
+    if (number)
+    /* TODO ASSERT*/
+        printf("I will assert!!!\n");
 
-    fclose(file);
+    printf("port range %d-%d\n", ctx->port_range[0], ctx->port_range[1]);
+
+
 }
 
 
-static void read_stdin(char **encrypt)
+/* this will assert */
+void get_scans(char* arg, nmap_context* ctx)
 {
-    size_t buffer_size = 1024;
-    size_t total_size = 0;
-    char *buffer = malloc(buffer_size);
-    int c;
+    /*
+        TODO review
+    */
+    char* scan = NULL;
+    int i = 0;
 
-    while ((c = getchar()) != EOF)
+    scan = strtok(arg, ",");
+    while (scan)
     {
-        if (total_size + 1 >= buffer_size)
-        {
-            buffer_size *= 2;
-            char *new_buffer = realloc(buffer, buffer_size);
-            buffer = new_buffer;
-        }
-        buffer[total_size++] = (char)c;
+        for (i = 0; (get_scan_name(i) != NULL) && (strcmp(scan, get_scan_name(i)) != 0);i++)
+            ;
+        
+        if (get_scan_name(i))
+            ctx->scans |= get_scan_scan(i);
+        else
+            /*TODO assert*/
+            printf("'%s' scan type not found or invalid\n", scan);
+
+        scan = strtok(NULL, ",");
     }
 
-    buffer[total_size] = '\0';
-
-    *encrypt = buffer;
+    if (ctx->scans == 0)
+        /*ASSERT!!!*/
+        printf("no scan found!!!\n");
+    else
+        printf("scan found\n");
 }
 
 void parse_args(int argc, char *argv[], nmap_context* ctx)
 {
     int opt;
-    // char* stdin_buffer = NULL;
-    // list_item_t **list = (list_item_t **)encrypt;
 
-    // *algorithm = check_algorithm(argv[1]);
+    /* TODO review*/
+    memset(ctx, 0, sizeof(nmap_context));
+
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
         {"ports", required_argument, 0, 'p'},
@@ -129,76 +202,81 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
         {
             case '?':
             case 'h':
-                print_usage(*algorithm, EXIT_SUCCESS);
+                // print_usage(*algorithm, EXIT_SUCCESS);
                 exit(0);
             case 'p': /* port */
-                *flags |= P_FLAG;
+                /* TODO set the port range, if it's set twice assert */
+                get_ports(optarg, ctx);
+                // *flags |= P_FLAG;
                 break;
             case 'i': /* ip */
-                *flags |= Q_FLAG;
+                /* TODO add to scan list */
+                // *flags |= Q_FLAG;
                 break;
             case 'r': /* file */
-                *flags |= R_FLAG;
+                // *flags |= R_FLAG;
                 break;
             case 's': /* scan */
                 if (optarg)
                 {
-                    list_add_last(list, optarg, optarg, TYPE_NORMAL);
+                    get_scans(optarg, ctx);
                 }
                 else
                 {
-                    fprintf(stderr, "Option -l contains garbage as argument: %s.\n", optarg);
+                    fprintf(stderr, "Option -s contains garbage as argument: %s.\n", optarg);
                     fprintf(stderr, "This will become fatal error in the future.\n");
                 }
                 break;
             case 0: /* speedup */
-                if (strcmp("speedup", long_options[optind-1].name) == 0) {
+                if (strcmp("speedup", long_options[optind-1].name) == 0)
+                {
                     printf("Speedup option with value %s\n", optarg);
                 }
+                break;
             default:
-                print_usage(*algorithm, EXIT_FAILURE);
+                // print_usage(*algorithm, EXIT_FAILURE);
                 exit(1);
         }
     }
 
-    stdin_buffer = NULL;
-    for (int i = optind+1; i < argc; i++)
-    {
-        if (!can_read_file(*algorithm))
-        {
-            fprintf(stderr, "ft_ssl: Error: %s does not accept files as input.\n", get_scan_name(*algorithm));
-            print_usage(*algorithm, EXIT_FAILURE);
-            exit(1);
-        }
+    // stdin_buffer = NULL;
+    // for (int i = optind+1; i < argc; i++)
+    // {
+    //     if (!can_read_file(*algorithm))
+    //     {
+    //         fprintf(stderr, "ft_ssl: Error: %s does not accept files as input.\n", get_scan_name(*algorithm));
+    //         print_usage(*algorithm, EXIT_FAILURE);
+    //         exit(1);
+    //     }
 
-        read_file(argv[i], &stdin_buffer);
-        if (stdin_buffer)
-        {
-            list_add_last(list, stdin_buffer, argv[i], TYPE_FILE);
-            free(stdin_buffer);
-            stdin_buffer = NULL;
-        }
-    }
+    //     read_file(argv[i], &stdin_buffer);
+    //     if (stdin_buffer)
+    //     {
+    //         list_add_last(list, stdin_buffer, argv[i], TYPE_FILE);
+    //         free(stdin_buffer);
+    //         stdin_buffer = NULL;
+    //     }
+    // }
 
-    if (optind >= argc)
-    {
-        fprintf(stderr, "Expected argument after options\n");
-        print_usage(*algorithm, EXIT_FAILURE);
-        exit(1);
-    }
+    // if (optind >= argc)
+    // {
+    //     fprintf(stderr, "Expected argument after options\n");
+    //     print_usage(*algorithm, EXIT_FAILURE);
+    //     exit(1);
+    // }
 
-    /* chekc if something to read from stdin. */
-    if (!isatty(fileno(stdin)) && (*flags & P_FLAG || *list == NULL)) {
-        read_stdin(&stdin_buffer);
-        list_add_last(list, stdin_buffer, (*flags & P_FLAG) ? stdin_buffer : "stdin", (*flags & P_FLAG) ? TYPE_STDIN_NORMAL : TYPE_STDIN);
-        free(stdin_buffer);
-    }
+    // /* chekc if something to read from stdin. */
+    // if (!isatty(fileno(stdin)) && (*flags & P_FLAG || *list == NULL)) {
+    //     read_stdin(&stdin_buffer);
+    //     list_add_last(list, stdin_buffer, (*flags & P_FLAG) ? stdin_buffer : "stdin", (*flags & P_FLAG) ? TYPE_STDIN_NORMAL : TYPE_STDIN);
+    //     free(stdin_buffer);
+    // }
 
-    /* no input recieved, so we read from stdin. */
-    if ((*list == NULL))
-    {
-        read_stdin(&stdin_buffer);
-        list_add_last(list, stdin_buffer, (*flags & P_FLAG) ? stdin_buffer : "stdin", (*flags & P_FLAG) ? TYPE_STDIN_NORMAL : TYPE_STDIN);
-        free(stdin_buffer);
-    }
+    // /* no input recieved, so we read from stdin. */
+    // if ((*list == NULL))
+    // {
+    //     read_stdin(&stdin_buffer);
+    //     list_add_last(list, stdin_buffer, (*flags & P_FLAG) ? stdin_buffer : "stdin", (*flags & P_FLAG) ? TYPE_STDIN_NORMAL : TYPE_STDIN);
+    //     free(stdin_buffer);
+    // }
 }
