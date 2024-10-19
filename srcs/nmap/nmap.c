@@ -458,8 +458,10 @@ int resolve_hostname(const char *hostname, char *resolved_ip)
 }
 
 
-void print_scan_status(int status) {
-    switch (status) {
+void print_scan_status(int status)
+{
+    switch (status)
+    {
         case 0:
             printf("Closed");
             break;
@@ -475,40 +477,47 @@ void print_scan_status(int status) {
     }
 }
 
-void print_scan_result(int *is_open, int scans) {
-    if (scans & FLAG_SYN) {
+void print_scan_result(int *is_open, int scans)
+{
+    if (scans & FLAG_SYN)
+    {
         printf(" SYN(");
         print_scan_status(is_open[S_SYN - 1]);
         printf(")");
     }
-    if (scans & FLAG_NULL) {
+    if (scans & FLAG_NULL)
+    {
         printf(" NULL(");
         print_scan_status(is_open[S_NULL - 1]);
         printf(")");
     }
-    if (scans & FLAG_FIN) {
+    if (scans & FLAG_FIN)
+    {
         printf(" FIN(");
         print_scan_status(is_open[S_FIN - 1]);
         printf(")");
     }
-    if (scans & FLAG_XMAS) {
+    if (scans & FLAG_XMAS)
+    {
         printf(" XMAS(");
         print_scan_status(is_open[S_XMAS - 1]);
         printf(")");
     }
-    if (scans & FLAG_ACK) {
+    if (scans & FLAG_ACK)
+    {
         printf(" ACK(");
         print_scan_status(is_open[S_ACK - 1]);
         printf(")");
     }
-    if (scans & FLAG_UDP) {
+    if (scans & FLAG_UDP)
+    {
         printf(" UDP(");
         print_scan_status(is_open[S_UDP - 1]);
         printf(")");
     }
 }
 
-void print_result(nmap_context* ctx) {
+void print_result(nmap_context* ctx, const char* target_ip) {
     int start_port = ctx->port_range[0];
     int end_port = ctx->port_range[1];
     int total_ports = end_port - start_port + 1;
@@ -516,7 +525,7 @@ void print_result(nmap_context* ctx) {
     int closed_filtered_ports = 0;
 
     printf("Scan Configurations\n");
-    printf("Target Ip-Address: %s\n", ctx->dst->address);
+    printf("Target Ip-Address: %s\n", target_ip);
     printf("No of Ports to scan: %d\n", total_ports);
     printf("Scans to be performed: ");
     if (ctx->scans & FLAG_SYN) printf("SYN ");
@@ -534,28 +543,35 @@ void print_result(nmap_context* ctx) {
     printf("%-6s %-20s %-42s %-10s\n", "Port", "Service Name", "Results", "Conclusion");
     printf("-------------------------------------------------------------\n");
 
-    // Loop through the results to display open ports
-    for (int i = start_port; i <= end_port; i++) {
-        if (results[i].is_open[0] == 1) { // If the port is open (any scan detected as open)
+    for (int i = start_port; i <= end_port; i++)
+    {
+        if (results[i].is_open[0] == 1)
+        {
             open_ports++;
             printf("%-6d %-20s ", i, results[i].service ? results[i].service : "Unassigned");
             print_scan_result(results[i].is_open, results[i].scan_open);
             printf("\t%-10s\n", "Open");
-        } else {
+        }
+        else
+        {
             closed_filtered_ports++;
         }
     }
 
-    // If the total ports to scan is greater than 20, summarize closed/filtered ports
-    if (total_ports > 20) {
+    if (total_ports > 20)
+    {
         printf("\nNote: Other ports are filtered or closed.\n");
-    } else {
+    }
+    else
+    {
         printf("\nClosed/Filtered/Unfiltered ports:\n");
         printf("%-6s %-20s %-42s %-10s\n", "Port", "Service Name", "Results", "Conclusion");
         printf("-------------------------------------------------------------\n");
 
-        for (int i = start_port; i <= end_port; i++) {
-            if (results[i].is_open[0] != 1) { // If the port is not open
+        for (int i = start_port; i <= end_port; i++)
+        {
+            if (results[i].is_open[0] != 1)
+            {
                 printf("%-6d %-20s ", i, results[i].service ? results[i].service : "Unassigned");
                 print_scan_result(results[i].is_open, results[i].scan_open);
                 printf("\t%-10s\n", "Closed");
@@ -570,9 +586,16 @@ int nmap_main(nmap_context* ctx)
     struct timespec start, end;
     double elapsed;
     char *source_ip = malloc(INET_ADDRSTRLEN);
+    bool first_time = true;
 
     while (tmp)
     {
+        if (!first_time)
+        {
+            printf("\n\n");
+        }
+        first_time = false;
+
         memset(results, 0, sizeof(results));
 
         /* time */
@@ -621,10 +644,9 @@ int nmap_main(nmap_context* ctx)
         elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
         // printf("Scan results for %s\n\n\n", target_ip);
-        print_result(ctx);
+        print_result(ctx, target_ip);
 
-        printf("\nScan took %.5f secs\n", elapsed); // Placeholder for actual time
-
+        printf("\nScan took %.5f secs\n", elapsed);
 
         tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
     }
