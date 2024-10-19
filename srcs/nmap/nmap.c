@@ -19,7 +19,14 @@
 #define PCKT_LEN 8192
 #define MAX_PORTS 1024
 
-// Pseudo-header needed for TCP checksum calculation
+typedef struct {
+    const char* service; /* service name */
+    int         is_open; /* 1 == open, 2 == filtered, 0 == closed */
+    int         scan_open; /* bitmask */
+} scan_result;
+
+static scan_result results[MAX_PORTS];
+
 struct pseudo_header {
     u_int32_t source_address;
     u_int32_t dest_address;
@@ -28,17 +35,20 @@ struct pseudo_header {
     u_int16_t tcp_length;
 };
 
-unsigned short csum(unsigned short *ptr, int nbytes) {
+unsigned short csum(unsigned short *ptr, int nbytes)
+{
     long sum;
     unsigned short oddbyte;
     short answer;
 
     sum = 0;
-    while (nbytes > 1) {
+    while (nbytes > 1)
+    {
         sum += *ptr++;
         nbytes -= 2;
     }
-    if (nbytes == 1) {
+    if (nbytes == 1)
+    {
         oddbyte = 0;
         *((u_char*)&oddbyte) = *(u_char*)ptr;
         sum += oddbyte;
@@ -112,7 +122,6 @@ void create_packet(char *packet, struct sockaddr_in *sin, int target_port, const
         default:
         /* TODO ASSERT */
             ft_assert(0, "Unknown scan type\n");
-            // printf("Unknown scan type!\n");
             return;
     }
 
@@ -141,8 +150,6 @@ void send_packets(int sock, const char *target_ip, const char *source_ip, int sc
     sin.sin_family = AF_INET;
     sin.sin_addr.s_addr = inet_addr(target_ip);
 
-    // printf("Sending packets to %s\n", target_ip);
-
     for (int port = start_port; port <= end_port; port++)
     {
         memset(packet, 0, PCKT_LEN);
@@ -162,7 +169,7 @@ void send_packets(int sock, const char *target_ip, const char *source_ip, int sc
     }
 }
 
-static const char* services[] ={
+static const char* services[] = {
     "HTTP", "SSH", "SMTP", "MySQL", "PostgreSQL", "FTP", "Telnet", "POP3", NULL
 };
 
@@ -186,11 +193,11 @@ void set_nonblocking(int sock)
     int flags = fcntl(sock, F_GETFL, 0);
     if (flags == -1)
     {
-        perror("fcntl get failed");
+        ft_assert(0, "fcntl get failed");
     }
     if (fcntl(sock, F_SETFL, flags | O_NONBLOCK) == -1)
     {
-        perror("fcntl set non-blocking failed");
+        ft_assert(0, "fcntl set non-blocking failed");
     }
 }
 
@@ -203,7 +210,7 @@ void banner_grab(const char *target_ip, int port)
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock == -1)
     {
-        printf("Could not create socket\n");
+        ft_assert(0, "Socket creation failed");
         return;
     }
 
@@ -213,20 +220,17 @@ void banner_grab(const char *target_ip, int port)
 
     if (connect(sock, (struct sockaddr *)&server, sizeof(server)) < 0)
     {
-        perror("connect failed");
         close(sock);
-        return;
+        ft_assert(0, "connect failed");
     }
 
     set_nonblocking(sock);
 
-    // printf("Sending GET request to port %d\n", port);
     snprintf(message, sizeof(message), "GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", target_ip);
     if (send(sock, message, strlen(message), 0) < 0)
     {
-        printf("Send failed\n");
         close(sock);
-        return;
+        ft_assert(0, "Send failed");
     }
 
     fd_set readfds;
@@ -239,13 +243,11 @@ void banner_grab(const char *target_ip, int port)
     int activity = select(sock + 1, &readfds, NULL, NULL, &timeout);
     if (activity == 0)
     {
-        printf("Receive timed out\n");
         close(sock);
         return;
     }
     else if (activity < 0)
     {
-        perror("select error");
         close(sock);
         return;
     }
@@ -261,6 +263,7 @@ void banner_grab(const char *target_ip, int port)
 
         const char* service_name = identify_service_from_banner(server_reply);
         printf("Port %d is open - Service: %s\n", port, service_name);
+        results[port].service = service_name;
     }
     else
     {
@@ -301,20 +304,24 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
                 if (iph->protocol == IPPROTO_TCP && source.sin_addr.s_addr == inet_addr(target_ip))
                 {
                     int port = ntohs(tcph->source);
-                    if (ports_status[port] == -1) {
+                    if (ports_status[port] == -1)
+                    {
                         if (scan_type == S_SYN && tcph->syn == 1 && tcph->ack == 1)
                         {
                             printf("Port %d is open (SYN-ACK received)\n", port);
+                            results[port].is_open = 1;
                             ports_status[port] = 1;
                         }
                         else if ((scan_type == S_FIN || scan_type == S_XMAS || scan_type == S_NULL) && tcph->rst == 1)
                         {
                             printf("Port %d is closed (RST received)\n", port);
+                            results[port].is_open = 0;
                             ports_status[port] = 0;
                         }
                         else if (scan_type == S_ACK && tcph->rst == 1)
                         {
                             printf("Port %d is unfiltered (RST received)\n", port);
+                            results[port].is_open = 2;
                             ports_status[port] = 1;
                         }
                         ports_left--;
@@ -324,11 +331,11 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
         }
         else if (ret == 0)
         {
-            // printf("Timeout: no more responses received, marking remaining ports as filtered.\n");
             for (int i = 0; i < MAX_PORTS; i++)
             {
                 if (ports_status[i] == -1)
                 {
+                    results[port].is_open = 2;
                     ports_status[i] = -2;
                     ports_left--;
                 }
@@ -336,8 +343,7 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
         }
         else
         {
-            perror("select error");
-            break;
+            ft_assert(0, "select error");
         }
     }
 }
@@ -364,7 +370,7 @@ void get_local_ip(char **ip)
     getsockname(temp_sock, (struct sockaddr *)&local_addr, &addr_len);
 
     inet_ntop(AF_INET, &local_addr.sin_addr, buffer, INET_ADDRSTRLEN);
-    // printf("Local IP: %s\n", buffer);
+
     close(temp_sock);
 }
 
@@ -372,34 +378,26 @@ int nmap(int scan_type, char* source_ip, char* target_ip, int start_port, int en
 {
     int sock;
 
-    // printf("Scanning target %s from source %s\n", target_ip, source_ip);
-    // printf("Scan type: %d\n", scan_type);
-    // printf("Port range: %d-%d\n", start_port, end_port);
-    // Create a raw socket
     sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
     if (sock < 0)
     {
-        perror("Socket creation failed");
-        return -1;
+        ft_assert(0, "Socket creation failed");
     }
 
     int ports_status[MAX_PORTS];
-    for (int i = 0; i < MAX_PORTS; i++) {
+    for (int i = 0; i < MAX_PORTS; i++)
+    {
         ports_status[i] = -1;
     }
 
-    // Set IP_HDRINCL to tell the kernel that headers are included in the packet
     int one = 1;
     if (setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0)
     {
-        perror("Setting IP_HDRINCL failed");
-        return -1;
+        ft_assert(0, "Setting IP_HDRINCL failed");
     }
     
     send_packets(sock, target_ip, source_ip, scan_type, start_port, end_port);
 
-
-    // Wait for responses asynchronously
     receive_responses(sock, target_ip, ports_status, scan_type);
 
     for (int port = 1; port <= MAX_PORTS; port++)
@@ -414,38 +412,31 @@ int nmap(int scan_type, char* source_ip, char* target_ip, int start_port, int en
     return 0;
 }
 
-int resolve_hostname(const char *hostname, char *resolved_ip) {
+int resolve_hostname(const char *hostname, char *resolved_ip)
+{
     struct addrinfo hints, *res;
     int status;
 
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET; // IPv4
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
 
-    // Resolve the hostname
-    if ((status = getaddrinfo(hostname, NULL, &hints, &res)) != 0) {
+    if ((status = getaddrinfo(hostname, NULL, &hints, &res)) != 0)
+    {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
         return -1;
     }
 
-    // Convert the resolved address to a string
     struct sockaddr_in *ipv4 = (struct sockaddr_in *)res->ai_addr;
     inet_ntop(AF_INET, &(ipv4->sin_addr), resolved_ip, INET_ADDRSTRLEN);
 
-    freeaddrinfo(res); // Free the address info structure
+    freeaddrinfo(res);
     return 0;
 }
 
 int nmap_main(nmap_context* ctx)
 {
     target_t *tmp = ctx->dst;
-
-    // target_t *tmp = ctx->dst;
-    // while (tmp)
-    // {
-    //     printf("Target: %s\n", tmp->address);
-    //     tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
-    // }
 
     while (tmp)
     {
@@ -454,14 +445,11 @@ int nmap_main(nmap_context* ctx)
         get_local_ip(&source_ip);
         const char *target_ip = tmp->address;
 
-
         struct in_addr addr;
         char resolved_ip[INET_ADDRSTRLEN];
 
-        // Check if the input is an IP address or a hostname, and resolve if needed
         if (inet_pton(AF_INET, target_ip, &addr) == 1)
         {
-            // Input is already a valid IP address
             strncpy(resolved_ip, target_ip, INET_ADDRSTRLEN);
         }
         else
@@ -475,37 +463,24 @@ int nmap_main(nmap_context* ctx)
             }
         }
 
-        // printf("Resolved IP: |%s|\n", resolved_ip);
-
-
         if (ctx->scans & FLAG_SYN)
-        {
-            // printf("Scanning SYN111\n");
             nmap(S_SYN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
-        }
+        
         if (ctx->scans & FLAG_NULL)
-        {
-            // printf("Scanning NULL\n");
             nmap(S_NULL, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
-        }
+        
         if (ctx->scans & FLAG_FIN)
-        {
-            // printf("Scanning FIN\n");
             nmap(S_FIN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
-        }
+        
         if (ctx->scans & FLAG_XMAS)
-        {
             nmap(S_XMAS, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
-        }
+        
         if (ctx->scans & FLAG_ACK)
-        {
             nmap(S_ACK, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
-        }
 
         tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
-
     }
-    // }
+
     return 0;
 }
 
