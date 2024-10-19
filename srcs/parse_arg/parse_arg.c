@@ -270,25 +270,26 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
                     ft_assert(isdigit(optarg[k]), "ft_nmap: Fatal error: Invalid speedup value. Must be a number.\n");
                 
                 ctx->speedup = atoi(optarg);
-                
+                if (ctx->speedup < 1)
+                {
+                    fprintf(stderr, "ft_nmap: Warning: Speedup value is less than 1. Setting to 1.\n");
+                    ctx->speedup = 1;
+                }
+
+
                 break;
             default:
                 FT_NMAP_USAGE(EXIT_SUCCESS);
         }
     }
 
+    /* no target provided error */
     if (ctx->dst == NULL) {fprintf(stderr, "ft_ssl: No scan dst provided.\n"); FT_NMAP_USAGE(FAILURE);}
 
-    // target_t *tmp = ctx->dst;
-    // while (tmp)
-    // {
-    //     printf("Target: %s\n", tmp->address);
-    //     tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
-    // }
-
     if (ctx->scans == 0)
-    {
         ctx->scans = FLAG_SYN | FLAG_NULL | FLAG_FIN | FLAG_XMAS | FLAG_ACK | FLAG_UDP;
-    }
+
+    /* TODO fix it*/
+    if (ctx->speedup == 0) ctx->speedup = 4;
 
 }

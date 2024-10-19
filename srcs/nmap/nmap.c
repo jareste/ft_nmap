@@ -11,6 +11,7 @@
 #include <sys/time.h>
 #include <sys/select.h>
 #include <netdb.h>
+#include <time.h>
 
 #include <ft_nmap.h>
 #include <nmap_api.h>
@@ -57,7 +58,6 @@ int get_bitmask(ScanType scan)
  
     return 1 << (scan - 1);
 }
-
 
 unsigned short csum(unsigned short *ptr, int nbytes)
 {
@@ -124,27 +124,22 @@ void create_packet(char *packet, struct sockaddr_in *sin, int target_port, const
     {
         case S_SYN:
             tcph->syn = 1;
-            // printf("Sending SYN packet.\n");
             break;
         case S_NULL:
-            // printf("Sending NULL packet.\n");
             break;
         case S_FIN:
             tcph->fin = 1;
-            // printf("Sending FIN packet.\n");
             break;
         case S_XMAS:
             tcph->fin = 1;
             tcph->psh = 1;
             tcph->urg = 1;
-            // printf("Sending XMAS packet.\n");
             break;
         case S_ACK:
             tcph->ack = 1;
-            // printf("Sending ACK packet.\n");
             break;
         default:
-        /* TODO ASSERT */
+            /* TODO ASSERT */
             ft_assert(0, "Unknown scan type\n");
             return;
     }
@@ -197,7 +192,6 @@ static const char* services[] = {
     "HTTP", "SSH", "SMTP", "MySQL", "PostgreSQL", "FTP", "Telnet", "POP3", NULL
 };
 
-
 const char* identify_service_from_banner(const char* banner)
 {
 
@@ -244,7 +238,6 @@ void banner_grab(const char *target_ip, int port)
 
     if (connect(sock, (struct sockaddr *)&server, sizeof(server)) < 0)
     {
-        // fprintf(stderr, "failed to connect to %s on port %d\n", target_ip, port);
         close(sock);
         return;
     }
@@ -522,7 +515,6 @@ void print_result(nmap_context* ctx) {
     int open_ports = 0;
     int closed_filtered_ports = 0;
 
-    // Print scan summary header
     printf("Scan Configurations\n");
     printf("Target Ip-Address: %s\n", ctx->dst->address);
     printf("No of Ports to scan: %d\n", total_ports);
@@ -570,17 +562,22 @@ void print_result(nmap_context* ctx) {
             }
         }
     }
-    printf("\nScan took %.5f secs\n", 16.21338); // Placeholder for actual time
 }
 
 int nmap_main(nmap_context* ctx)
 {
     target_t *tmp = ctx->dst;
+    struct timespec start, end;
+    double elapsed;
+    char *source_ip = malloc(INET_ADDRSTRLEN);
 
     while (tmp)
     {
         memset(results, 0, sizeof(results));
-        char *source_ip = malloc(INET_ADDRSTRLEN);
+
+        /* time */
+        clock_gettime(CLOCK_MONOTONIC, &start);
+
         get_local_ip(&source_ip);
         const char *target_ip = tmp->address;
 
@@ -618,8 +615,16 @@ int nmap_main(nmap_context* ctx)
         if (ctx->scans & FLAG_ACK)
             nmap(S_ACK, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
 
+        /* time */
+        clock_gettime(CLOCK_MONOTONIC, &end);
+
+        elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+
         // printf("Scan results for %s\n\n\n", target_ip);
         print_result(ctx);
+
+        printf("\nScan took %.5f secs\n", elapsed); // Placeholder for actual time
+
 
         tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
     }
