@@ -9,7 +9,7 @@ RELEASE_CFLAGS = $(CFLAGS) -DNDEBUG
 #########
 
 #########
-FILES = main ft_malloc parse_arg ft_list nmap
+FILES = main ft_malloc parse_arg ft_list nmap 
 
 SRC = $(addsuffix .c, $(FILES))
 

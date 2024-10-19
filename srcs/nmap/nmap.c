@@ -24,6 +24,7 @@ typedef struct {
     const char* service; /* service name */
     int         is_open[6]; /* 1 == open, 2 == filtered, 0 == closed */
     int         scan_open; /* bitmask */
+    bool        any_open; /* if any scan marked as open */
 } scan_result;
 
 static scan_result results[MAX_PORTS];
@@ -58,6 +59,106 @@ int get_bitmask(ScanType scan)
  
     return 1 << (scan - 1);
 }
+
+/* UDP */
+void send_udp_packet(int sock, struct sockaddr_in *target, int port)
+{
+    unsigned char dns_query[33] = {
+        0x12, 0x34,  // Transaction ID
+        0x01, 0x00,  // Flags: standard query
+        0x00, 0x01,  // Questions: 1
+        0x00, 0x00,  // Answer RRs: 0
+        0x00, 0x00,  // Authority RRs: 0
+        0x00, 0x00,  // Additional RRs: 0
+        0x03, 0x77, 0x77, 0x77,  // "www"
+        0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65,  // "google"
+        0x03, 0x63, 0x6f, 0x6d,  // "com"
+        0x00,  // Null terminator for the domain name
+        0x00, 0x01,  // Type: A (Host Request)
+        0x00, 0x01   // Class: IN (Internet)
+    };
+
+    // If scanning port 53 (DNS), send a DNS query
+    if (port == 53) {
+        if (sendto(sock, dns_query, sizeof(dns_query), 0, (struct sockaddr *)target, sizeof(*target)) < 0) {
+            perror("sendto failed");
+        } else {
+            // printf("Sent DNS query to %s:%d\n", inet_ntoa(target->sin_addr), ntohs(target->sin_port));
+        }
+    } else {
+        const char *test_message = "Hello, UDP Servicse";
+        if (sendto(sock, test_message, strlen(test_message), 0, (struct sockaddr *)target, sizeof(*target)) < 0) {
+            perror("sendto failed");
+        } else {
+            // printf("Sent UDP packet to %s:%d\n", inet_ntoa(target->sin_addr), ntohs(target->sin_port));
+        }
+    }
+
+    char buffer[1024];
+    struct sockaddr_in response;
+    socklen_t len = sizeof(response);
+    int received = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&response, &len);
+
+    if (received < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            results[port].is_open[5] = 2;
+            results[port].scan_open |= FLAG_UDP;
+
+            // printf("No response on port %d (open or filtered)\n", ntohs(target->sin_port));
+        } else {
+            results[port].is_open[5] = 2;
+            results[port].scan_open |= FLAG_UDP;
+
+            // perror("recvfrom failed");
+        }
+    } else {
+        results[port].is_open[5] = 1;
+        results[port].scan_open |= FLAG_UDP;
+        results[port].service = port == 53?"domain":"Unassigned";
+        results[port].any_open = true;
+
+        
+        // buffer[received] = '\0';  // Null-terminate the received data
+        // printf("Received response from %s:%d - %s\n", inet_ntoa(response.sin_addr), ntohs(response.sin_port), buffer);
+    }
+}
+
+void set_socket_timeout(int sock, int sec, int usec) {
+    struct timeval timeout;
+    timeout.tv_sec = sec;
+    timeout.tv_usec = usec;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
+}
+
+void scan_udp_ports(const char *target_ip, int start_port, int end_port) {
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        perror("Socket creation failed");
+        return;
+    }
+
+    set_socket_timeout(sock, 2, 0);
+
+    for (int port = start_port; port <= end_port; port++) {
+        struct sockaddr_in target;
+        target.sin_family = AF_INET;
+        target.sin_port = htons(port);
+        inet_pton(AF_INET, target_ip, &target.sin_addr);
+
+        // printf("Scanning UDP port %d...\n", port);
+        send_udp_packet(sock, &target, port);
+    }
+
+    close(sock);
+}
+
+int udp(char* target_ip, int start_port, int end_port)
+{
+    scan_udp_ports(target_ip, start_port, end_port);
+    
+    return 0;
+}
+/* UDP_END*/
 
 unsigned short csum(unsigned short *ptr, int nbytes)
 {
@@ -179,11 +280,9 @@ void send_packets(int sock, const char *target_ip, const char *source_ip, int sc
         if (sendto(sock, packet, sizeof(struct iphdr) + sizeof(struct tcphdr), 0, (struct sockaddr *)&sin, sizeof(sin)) < 0)
         {
             ft_assert(0, "Packet send failed");
-            // perror("Packet send failed");
         }
         else
         {
-            // printf("Sent packet to %s on port %d\n", target_ip, port);
         }
     }
 }
@@ -203,7 +302,7 @@ const char* identify_service_from_banner(const char* banner)
         }
     }
 
-    return "Unknown Service";
+    return "Unassigned";
 }
 
 void set_nonblocking(int sock)
@@ -273,19 +372,16 @@ void banner_grab(const char *target_ip, int port)
     int received_len = recv(sock, server_reply, sizeof(server_reply) - 1, 0);
     if (received_len < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
     {
-        // printf("Receive failed\n");
     }
     else if (received_len > 0)
     {
         server_reply[received_len] = '\0';
 
         const char* service_name = identify_service_from_banner(server_reply);
-        // printf("Port %d is open - Service: %s\n", port, service_name);
         results[port].service = service_name;
     }
     else
     {
-        // printf("No data received from port %d\n", port);
     }
 
     close(sock);
@@ -300,7 +396,6 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
     socklen_t source_len = sizeof(source);
 
     int ports_left = MAX_PORTS;
-    // printf("scan_type: %d\n", scan_type);
 
     while (ports_left > 0)
     {
@@ -327,24 +422,23 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
                     {
                         if (scan_type == S_SYN && tcph->syn == 1 && tcph->ack == 1)
                         {
-                            // printf("Port %d is open (SYN-ACK received)\n", port);
                             results[port].is_open[scan_type-1] = 1;
                             results[port].scan_open |= get_bitmask(scan_type);
                             ports_status[port] = 1;
+                            results[port].any_open = true;
                         }
                         else if ((scan_type == S_FIN || scan_type == S_XMAS || scan_type == S_NULL) && tcph->rst == 1)
                         {
-                            // printf("Port %d is closed (RST received)\n", port);
                             results[port].is_open[scan_type-1] = 0;
                             results[port].scan_open |= get_bitmask(scan_type);
                             ports_status[port] = 0;
                         }
                         else if (scan_type == S_ACK && tcph->rst == 1)
                         {
-                            // printf("Port %d is unfiltered (RST received)\n", port);
                             results[port].is_open[scan_type-1] = 2;
                             results[port].scan_open |= get_bitmask(scan_type);
                             ports_status[port] = 1;
+                            results[port].any_open = true;
                         }
                         ports_left--;
                     }
@@ -545,7 +639,7 @@ void print_result(nmap_context* ctx, const char* target_ip) {
 
     for (int i = start_port; i <= end_port; i++)
     {
-        if (results[i].is_open[0] == 1)
+        if (results[i].any_open == true)
         {
             open_ports++;
             printf("%-6d %-20s ", i, results[i].service ? results[i].service : "Unassigned");
@@ -570,7 +664,7 @@ void print_result(nmap_context* ctx, const char* target_ip) {
 
         for (int i = start_port; i <= end_port; i++)
         {
-            if (results[i].is_open[0] != 1)
+            if (results[i].any_open == false)
             {
                 printf("%-6d %-20s ", i, results[i].service ? results[i].service : "Unassigned");
                 print_scan_result(results[i].is_open, results[i].scan_open);
@@ -629,7 +723,6 @@ int nmap_main(nmap_context* ctx)
             nmap(S_NULL, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
         
         if (ctx->scans & FLAG_FIN)
-
             nmap(S_FIN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
 
         if (ctx->scans & FLAG_XMAS)
@@ -638,12 +731,14 @@ int nmap_main(nmap_context* ctx)
         if (ctx->scans & FLAG_ACK)
             nmap(S_ACK, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
 
+        if (ctx->scans & FLAG_UDP)
+            udp(resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+
         /* time */
         clock_gettime(CLOCK_MONOTONIC, &end);
 
         elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
-        // printf("Scan results for %s\n\n\n", target_ip);
         print_result(ctx, target_ip);
 
         printf("\nScan took %.5f secs\n", elapsed);
