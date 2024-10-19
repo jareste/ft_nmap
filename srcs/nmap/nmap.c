@@ -79,17 +79,26 @@ void send_udp_packet(int sock, struct sockaddr_in *target, int port)
     };
 
     // If scanning port 53 (DNS), send a DNS query
-    if (port == 53) {
-        if (sendto(sock, dns_query, sizeof(dns_query), 0, (struct sockaddr *)target, sizeof(*target)) < 0) {
+    if (port == 53)
+    {
+        if (sendto(sock, dns_query, sizeof(dns_query), 0, (struct sockaddr *)target, sizeof(*target)) < 0)
+        {
             perror("sendto failed");
-        } else {
+        }
+        else
+        {
             // printf("Sent DNS query to %s:%d\n", inet_ntoa(target->sin_addr), ntohs(target->sin_port));
         }
-    } else {
+    }
+    else
+    {
         const char *test_message = "Hello, UDP Servicse";
-        if (sendto(sock, test_message, strlen(test_message), 0, (struct sockaddr *)target, sizeof(*target)) < 0) {
+        if (sendto(sock, test_message, strlen(test_message), 0, (struct sockaddr *)target, sizeof(*target)) < 0)
+        {
             perror("sendto failed");
-        } else {
+        }
+        else
+        {
             // printf("Sent UDP packet to %s:%d\n", inet_ntoa(target->sin_addr), ntohs(target->sin_port));
         }
     }
@@ -99,19 +108,25 @@ void send_udp_packet(int sock, struct sockaddr_in *target, int port)
     socklen_t len = sizeof(response);
     int received = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&response, &len);
 
-    if (received < 0) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+    if (received < 0)
+    {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+        {
             results[port].is_open[5] = 2;
             results[port].scan_open |= FLAG_UDP;
 
             // printf("No response on port %d (open or filtered)\n", ntohs(target->sin_port));
-        } else {
+        }
+        else
+        {
             results[port].is_open[5] = 2;
             results[port].scan_open |= FLAG_UDP;
 
             // perror("recvfrom failed");
         }
-    } else {
+    }
+    else
+    {
         results[port].is_open[5] = 1;
         results[port].scan_open |= FLAG_UDP;
         results[port].service = port == 53?"domain":"Unassigned";
