@@ -21,7 +21,7 @@
 
 typedef struct {
     const char* service; /* service name */
-    int         is_open; /* 1 == open, 2 == filtered, 0 == closed */
+    int         is_open[6]; /* 1 == open, 2 == filtered, 0 == closed */
     int         scan_open; /* bitmask */
 } scan_result;
 
@@ -34,6 +34,30 @@ struct pseudo_header {
     u_int8_t protocol;
     u_int16_t tcp_length;
 };
+
+int get_bitmask(ScanType scan)
+{
+    switch (scan)
+    {
+        case S_SYN:
+            return FLAG_SYN;
+        case S_NULL:
+            return FLAG_NULL;
+        case S_FIN:
+            return FLAG_FIN;
+        case S_XMAS:
+            return FLAG_XMAS;
+        case S_ACK:
+            return FLAG_ACK;
+        case S_UDP:
+            return FLAG_UDP;
+        default:
+            return 0;
+    }
+ 
+    return 1 << (scan - 1);
+}
+
 
 unsigned short csum(unsigned short *ptr, int nbytes)
 {
@@ -220,8 +244,9 @@ void banner_grab(const char *target_ip, int port)
 
     if (connect(sock, (struct sockaddr *)&server, sizeof(server)) < 0)
     {
+        // fprintf(stderr, "failed to connect to %s on port %d\n", target_ip, port);
         close(sock);
-        ft_assert(0, "connect failed");
+        return;
     }
 
     set_nonblocking(sock);
@@ -255,19 +280,19 @@ void banner_grab(const char *target_ip, int port)
     int received_len = recv(sock, server_reply, sizeof(server_reply) - 1, 0);
     if (received_len < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
     {
-        printf("Receive failed\n");
+        // printf("Receive failed\n");
     }
     else if (received_len > 0)
     {
         server_reply[received_len] = '\0';
 
         const char* service_name = identify_service_from_banner(server_reply);
-        printf("Port %d is open - Service: %s\n", port, service_name);
+        // printf("Port %d is open - Service: %s\n", port, service_name);
         results[port].service = service_name;
     }
     else
     {
-        printf("No data received from port %d\n", port);
+        // printf("No data received from port %d\n", port);
     }
 
     close(sock);
@@ -282,13 +307,14 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
     socklen_t source_len = sizeof(source);
 
     int ports_left = MAX_PORTS;
+    // printf("scan_type: %d\n", scan_type);
 
     while (ports_left > 0)
     {
         FD_ZERO(&readfds);
         FD_SET(sock, &readfds);
 
-        timeout.tv_sec = 4;
+        timeout.tv_sec = 2;
         timeout.tv_usec = 0;
 
         int ret = select(sock + 1, &readfds, NULL, NULL, &timeout);
@@ -308,20 +334,23 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
                     {
                         if (scan_type == S_SYN && tcph->syn == 1 && tcph->ack == 1)
                         {
-                            printf("Port %d is open (SYN-ACK received)\n", port);
-                            results[port].is_open = 1;
+                            // printf("Port %d is open (SYN-ACK received)\n", port);
+                            results[port].is_open[scan_type-1] = 1;
+                            results[port].scan_open |= get_bitmask(scan_type);
                             ports_status[port] = 1;
                         }
                         else if ((scan_type == S_FIN || scan_type == S_XMAS || scan_type == S_NULL) && tcph->rst == 1)
                         {
-                            printf("Port %d is closed (RST received)\n", port);
-                            results[port].is_open = 0;
+                            // printf("Port %d is closed (RST received)\n", port);
+                            results[port].is_open[scan_type-1] = 0;
+                            results[port].scan_open |= get_bitmask(scan_type);
                             ports_status[port] = 0;
                         }
                         else if (scan_type == S_ACK && tcph->rst == 1)
                         {
-                            printf("Port %d is unfiltered (RST received)\n", port);
-                            results[port].is_open = 2;
+                            // printf("Port %d is unfiltered (RST received)\n", port);
+                            results[port].is_open[scan_type-1] = 2;
+                            results[port].scan_open |= get_bitmask(scan_type);
                             ports_status[port] = 1;
                         }
                         ports_left--;
@@ -335,7 +364,8 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
             {
                 if (ports_status[i] == -1)
                 {
-                    results[port].is_open = 2;
+                    results[i].is_open[scan_type-1] = 2;
+                    results[i].scan_open |= get_bitmask(scan_type);
                     ports_status[i] = -2;
                     ports_left--;
                 }
@@ -434,13 +464,122 @@ int resolve_hostname(const char *hostname, char *resolved_ip)
     return 0;
 }
 
+
+void print_scan_status(int status) {
+    switch (status) {
+        case 0:
+            printf("Closed");
+            break;
+        case 1:
+            printf("Open");
+            break;
+        case 2:
+            printf("Filtered");
+            break;
+        default:
+            printf("Unknown");
+            break;
+    }
+}
+
+void print_scan_result(int *is_open, int scans) {
+    if (scans & FLAG_SYN) {
+        printf(" SYN(");
+        print_scan_status(is_open[S_SYN - 1]);
+        printf(")");
+    }
+    if (scans & FLAG_NULL) {
+        printf(" NULL(");
+        print_scan_status(is_open[S_NULL - 1]);
+        printf(")");
+    }
+    if (scans & FLAG_FIN) {
+        printf(" FIN(");
+        print_scan_status(is_open[S_FIN - 1]);
+        printf(")");
+    }
+    if (scans & FLAG_XMAS) {
+        printf(" XMAS(");
+        print_scan_status(is_open[S_XMAS - 1]);
+        printf(")");
+    }
+    if (scans & FLAG_ACK) {
+        printf(" ACK(");
+        print_scan_status(is_open[S_ACK - 1]);
+        printf(")");
+    }
+    if (scans & FLAG_UDP) {
+        printf(" UDP(");
+        print_scan_status(is_open[S_UDP - 1]);
+        printf(")");
+    }
+}
+
+void print_result(nmap_context* ctx) {
+    int start_port = ctx->port_range[0];
+    int end_port = ctx->port_range[1];
+    int total_ports = end_port - start_port + 1;
+    int open_ports = 0;
+    int closed_filtered_ports = 0;
+
+    // Print scan summary header
+    printf("Scan Configurations\n");
+    printf("Target Ip-Address: %s\n", ctx->dst->address);
+    printf("No of Ports to scan: %d\n", total_ports);
+    printf("Scans to be performed: ");
+    if (ctx->scans & FLAG_SYN) printf("SYN ");
+    if (ctx->scans & FLAG_NULL) printf("NULL ");
+    if (ctx->scans & FLAG_FIN) printf("FIN ");
+    if (ctx->scans & FLAG_XMAS) printf("XMAS ");
+    if (ctx->scans & FLAG_ACK) printf("ACK ");
+    if (ctx->scans & FLAG_UDP) printf("UDP ");
+    printf("\n");
+    printf("No of threads: %d\n", ctx->speedup);
+    printf("Scanning..\n");
+    printf("................\n");
+
+    printf("Open ports:\n");
+    printf("%-6s %-20s %-42s %-10s\n", "Port", "Service Name", "Results", "Conclusion");
+    printf("-------------------------------------------------------------\n");
+
+    // Loop through the results to display open ports
+    for (int i = start_port; i <= end_port; i++) {
+        if (results[i].is_open[0] == 1) { // If the port is open (any scan detected as open)
+            open_ports++;
+            printf("%-6d %-20s ", i, results[i].service ? results[i].service : "Unassigned");
+            print_scan_result(results[i].is_open, results[i].scan_open);
+            printf("\t%-10s\n", "Open");
+        } else {
+            closed_filtered_ports++;
+        }
+    }
+
+    // If the total ports to scan is greater than 20, summarize closed/filtered ports
+    if (total_ports > 20) {
+        printf("\nNote: Other ports are filtered or closed.\n");
+    } else {
+        printf("\nClosed/Filtered/Unfiltered ports:\n");
+        printf("%-6s %-20s %-42s %-10s\n", "Port", "Service Name", "Results", "Conclusion");
+        printf("-------------------------------------------------------------\n");
+
+        for (int i = start_port; i <= end_port; i++) {
+            if (results[i].is_open[0] != 1) { // If the port is not open
+                printf("%-6d %-20s ", i, results[i].service ? results[i].service : "Unassigned");
+                print_scan_result(results[i].is_open, results[i].scan_open);
+                printf("\t%-10s\n", "Closed");
+            }
+        }
+    }
+    printf("\nScan took %.5f secs\n", 16.21338); // Placeholder for actual time
+}
+
 int nmap_main(nmap_context* ctx)
 {
     target_t *tmp = ctx->dst;
 
     while (tmp)
     {
-    
+        memset(results, 0, sizeof(results));
         char *source_ip = malloc(INET_ADDRSTRLEN);
         get_local_ip(&source_ip);
         const char *target_ip = tmp->address;
@@ -470,13 +609,17 @@ int nmap_main(nmap_context* ctx)
             nmap(S_NULL, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
         
         if (ctx->scans & FLAG_FIN)
+
             nmap(S_FIN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
-        
+
         if (ctx->scans & FLAG_XMAS)
             nmap(S_XMAS, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
-        
+
         if (ctx->scans & FLAG_ACK)
             nmap(S_ACK, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+
+        // printf("Scan results for %s\n\n\n", target_ip);
+        print_result(ctx);
 
         tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
     }

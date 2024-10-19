@@ -21,21 +21,23 @@
 typedef struct {
     const char* name;
     ScanType   scan;
+    int        flag;
 } scan_entry;
 
 static const scan_entry g_scans[] = {
-    { "syn", S_SYN },
-    { "null", S_NULL },
-    { "ack", S_ACK },
-    { "fin", S_FIN },
-    { "xmas", S_XMAS },
-    { "udp", S_UDP },
-    { "all", NONE },
-    { NULL, NONE }
+    { "syn", S_SYN, FLAG_SYN },
+    { "null", S_NULL, FLAG_NULL },
+    { "ack", S_ACK, FLAG_ACK },
+    { "fin", S_FIN, FLAG_FIN },
+    { "xmas", S_XMAS, FLAG_XMAS },
+    { "udp", S_UDP, FLAG_UDP },
+    { "all", NONE, FLAG_SYN | FLAG_NULL | FLAG_FIN | FLAG_XMAS | FLAG_ACK | FLAG_UDP },
+    { NULL, NONE, 0 }
 };
 
 #define get_scan_name(x) g_scans[x].name
 #define get_scan_scan(x) g_scans[x].scan
+#define get_scan_flag(x) g_scans[x].flag
 
 /***************************/
 /*        METHODS          */
@@ -124,7 +126,6 @@ void parse_file(const char *file_path, nmap_context* ctx)
     fseek(file, 0, SEEK_END);
     if (ftell(file) == 0)
     {
-        printf("The file is empty.\n");
         fclose(file);
         return;
     }
@@ -176,7 +177,7 @@ void get_ports(char *arg, nmap_context *ctx)
     ctx->port_range[0] = port1;
     ctx->port_range[1] = port2;
 
-    printf("Valid port range: %d-%d\n", ctx->port_range[0], ctx->port_range[1]);
+    // printf("Valid port range: %d-%d\n", ctx->port_range[0], ctx->port_range[1]);
 }
 
 void get_scans(char* arg, nmap_context* ctx)
@@ -195,7 +196,7 @@ void get_scans(char* arg, nmap_context* ctx)
             ;
 
         if (get_scan_name(i))
-            ctx->scans |= get_scan_scan(i);
+            ctx->scans |= get_scan_flag(i);
         else
             ft_assert(0, "ft_nmap: Fatal error: scan type not found or invalid.\n");
 
@@ -241,7 +242,6 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
                 get_ports(optarg, ctx);
                 break;
             case 'i': /* ip */
-                printf("IP: %s\n", optarg);
                 ft_assert(optarg, "ft_nmap: Fatal error: Invalid target IP.\n");
                 target = malloc(sizeof(target_t));
                 target->address = strdup(optarg);
@@ -279,56 +279,16 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
 
     if (ctx->dst == NULL) {fprintf(stderr, "ft_ssl: No scan dst provided.\n"); FT_NMAP_USAGE(FAILURE);}
 
-    target_t *tmp = ctx->dst;
-    while (tmp)
-    {
-        printf("Target: %s\n", tmp->address);
-        tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
-    }
+    // target_t *tmp = ctx->dst;
+    // while (tmp)
+    // {
+    //     printf("Target: %s\n", tmp->address);
+    //     tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
+    // }
 
     if (ctx->scans == 0)
     {
-        ctx->scans = S_SYN | S_NULL | S_FIN | S_XMAS | S_ACK | S_UDP;
+        ctx->scans = FLAG_SYN | FLAG_NULL | FLAG_FIN | FLAG_XMAS | FLAG_ACK | FLAG_UDP;
     }
 
-    // stdin_buffer = NULL;
-    // for (int i = optind+1; i < argc; i++)
-    // {
-    //     if (!can_read_file(*algorithm))
-    //     {
-    //         fprintf(stderr, "ft_ssl: Error: %s does not accept files as input.\n", get_scan_name(*algorithm));
-    //         print_usage(*algorithm, EXIT_FAILURE);
-    //         exit(1);
-    //     }
-
-    //     read_file(argv[i], &stdin_buffer);
-    //     if (stdin_buffer)
-    //     {
-    //         list_add_last(list, stdin_buffer, argv[i], TYPE_FILE);
-    //         free(stdin_buffer);
-    //         stdin_buffer = NULL;
-    //     }
-    // }
-
-    // if (optind >= argc)
-    // {
-    //     fprintf(stderr, "Expected argument after options\n");
-    //     print_usage(*algorithm, EXIT_FAILURE);
-    //     exit(1);
-    // }
-
-    // /* chekc if something to read from stdin. */
-    // if (!isatty(fileno(stdin)) && (*flags & P_FLAG || *list == NULL)) {
-    //     read_stdin(&stdin_buffer);
-    //     list_add_last(list, stdin_buffer, (*flags & P_FLAG) ? stdin_buffer : "stdin", (*flags & P_FLAG) ? TYPE_STDIN_NORMAL : TYPE_STDIN);
-    //     free(stdin_buffer);
-    // }
-
-    // /* no input recieved, so we read from stdin. */
-    // if ((*list == NULL))
-    // {
-    //     read_stdin(&stdin_buffer);
-    //     list_add_last(list, stdin_buffer, (*flags & P_FLAG) ? stdin_buffer : "stdin", (*flags & P_FLAG) ? TYPE_STDIN_NORMAL : TYPE_STDIN);
-    //     free(stdin_buffer);
-    // }
 }
