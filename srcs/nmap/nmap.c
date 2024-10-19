@@ -10,9 +10,11 @@
 #include <fcntl.h>
 #include <sys/time.h>
 #include <sys/select.h>
+#include <netdb.h>
 
 #include <ft_nmap.h>
 #include <nmap_api.h>
+#include <ft_malloc.h>
 
 #define PCKT_LEN 8192
 #define MAX_PORTS 1024
@@ -88,28 +90,29 @@ void create_packet(char *packet, struct sockaddr_in *sin, int target_port, const
     {
         case S_SYN:
             tcph->syn = 1;
-            printf("Sending SYN packet.\n");
+            // printf("Sending SYN packet.\n");
             break;
         case S_NULL:
-            printf("Sending NULL packet.\n");
+            // printf("Sending NULL packet.\n");
             break;
         case S_FIN:
             tcph->fin = 1;
-            printf("Sending FIN packet.\n");
+            // printf("Sending FIN packet.\n");
             break;
         case S_XMAS:
             tcph->fin = 1;
             tcph->psh = 1;
             tcph->urg = 1;
-            printf("Sending XMAS packet.\n");
+            // printf("Sending XMAS packet.\n");
             break;
         case S_ACK:
             tcph->ack = 1;
-            printf("Sending ACK packet.\n");
+            // printf("Sending ACK packet.\n");
             break;
         default:
         /* TODO ASSERT */
-            printf("Unknown scan type!\n");
+            ft_assert(0, "Unknown scan type\n");
+            // printf("Unknown scan type!\n");
             return;
     }
 
@@ -138,6 +141,8 @@ void send_packets(int sock, const char *target_ip, const char *source_ip, int sc
     sin.sin_family = AF_INET;
     sin.sin_addr.s_addr = inet_addr(target_ip);
 
+    // printf("Sending packets to %s\n", target_ip);
+
     for (int port = start_port; port <= end_port; port++)
     {
         memset(packet, 0, PCKT_LEN);
@@ -147,11 +152,12 @@ void send_packets(int sock, const char *target_ip, const char *source_ip, int sc
 
         if (sendto(sock, packet, sizeof(struct iphdr) + sizeof(struct tcphdr), 0, (struct sockaddr *)&sin, sizeof(sin)) < 0)
         {
-            perror("Packet send failed");
+            ft_assert(0, "Packet send failed");
+            // perror("Packet send failed");
         }
         else
         {
-            printf("Sent packet to %s on port %d\n", target_ip, port);
+            // printf("Sent packet to %s on port %d\n", target_ip, port);
         }
     }
 }
@@ -214,7 +220,7 @@ void banner_grab(const char *target_ip, int port)
 
     set_nonblocking(sock);
 
-    printf("Sending GET request to port %d\n", port);
+    // printf("Sending GET request to port %d\n", port);
     snprintf(message, sizeof(message), "GET / HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", target_ip);
     if (send(sock, message, strlen(message), 0) < 0)
     {
@@ -272,15 +278,15 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
     struct sockaddr_in source;
     socklen_t source_len = sizeof(source);
 
-    timeout.tv_sec = 4;
-    timeout.tv_usec = 0;
-
     int ports_left = MAX_PORTS;
 
     while (ports_left > 0)
     {
         FD_ZERO(&readfds);
         FD_SET(sock, &readfds);
+
+        timeout.tv_sec = 4;
+        timeout.tv_usec = 0;
 
         int ret = select(sock + 1, &readfds, NULL, NULL, &timeout);
         if (ret > 0)
@@ -318,7 +324,7 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
         }
         else if (ret == 0)
         {
-            printf("Timeout: no more responses received, marking remaining ports as filtered.\n");
+            // printf("Timeout: no more responses received, marking remaining ports as filtered.\n");
             for (int i = 0; i < MAX_PORTS; i++)
             {
                 if (ports_status[i] == -1)
@@ -358,28 +364,17 @@ void get_local_ip(char **ip)
     getsockname(temp_sock, (struct sockaddr *)&local_addr, &addr_len);
 
     inet_ntop(AF_INET, &local_addr.sin_addr, buffer, INET_ADDRSTRLEN);
-    printf("Local IP: %s\n", buffer);
+    // printf("Local IP: %s\n", buffer);
     close(temp_sock);
 }
 
-int nmap_main(nmap_context* ctx)
+int nmap(int scan_type, char* source_ip, char* target_ip, int start_port, int end_port)
 {
-    // if (argc != 3)
-    // {
-    //     printf("Usage: %s <target IP> <scan type>\n", argv[0]);
-    //     printf("Scan types: 1=SYN, 2=NULL, 3=FIN, 4=XMAS, 5=ACK\n");
-    //     return -1;
-    // }
-
-    const char *target_ip = ctx->dst->address;
-    char *source_ip = malloc(INET_ADDRSTRLEN);
-    get_local_ip(&source_ip);  // Get the local IP dynamically
-
-    int scan_type = atoi("3");
-
     int sock;
 
-    printf("Scanning target %s from source %s\n", target_ip, source_ip);
+    // printf("Scanning target %s from source %s\n", target_ip, source_ip);
+    // printf("Scan type: %d\n", scan_type);
+    // printf("Port range: %d-%d\n", start_port, end_port);
     // Create a raw socket
     sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
     if (sock < 0)
@@ -400,8 +395,9 @@ int nmap_main(nmap_context* ctx)
         perror("Setting IP_HDRINCL failed");
         return -1;
     }
+    
+    send_packets(sock, target_ip, source_ip, scan_type, start_port, end_port);
 
-    send_packets(sock, target_ip, source_ip, scan_type, 1, MAX_PORTS);
 
     // Wait for responses asynchronously
     receive_responses(sock, target_ip, ports_status, scan_type);
@@ -418,7 +414,100 @@ int nmap_main(nmap_context* ctx)
     return 0;
 }
 
+int resolve_hostname(const char *hostname, char *resolved_ip) {
+    struct addrinfo hints, *res;
+    int status;
 
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET; // IPv4
+    hints.ai_socktype = SOCK_STREAM;
+
+    // Resolve the hostname
+    if ((status = getaddrinfo(hostname, NULL, &hints, &res)) != 0) {
+        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
+        return -1;
+    }
+
+    // Convert the resolved address to a string
+    struct sockaddr_in *ipv4 = (struct sockaddr_in *)res->ai_addr;
+    inet_ntop(AF_INET, &(ipv4->sin_addr), resolved_ip, INET_ADDRSTRLEN);
+
+    freeaddrinfo(res); // Free the address info structure
+    return 0;
+}
+
+int nmap_main(nmap_context* ctx)
+{
+    target_t *tmp = ctx->dst;
+
+    // target_t *tmp = ctx->dst;
+    // while (tmp)
+    // {
+    //     printf("Target: %s\n", tmp->address);
+    //     tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
+    // }
+
+    while (tmp)
+    {
+    
+        char *source_ip = malloc(INET_ADDRSTRLEN);
+        get_local_ip(&source_ip);
+        const char *target_ip = tmp->address;
+
+
+        struct in_addr addr;
+        char resolved_ip[INET_ADDRSTRLEN];
+
+        // Check if the input is an IP address or a hostname, and resolve if needed
+        if (inet_pton(AF_INET, target_ip, &addr) == 1)
+        {
+            // Input is already a valid IP address
+            strncpy(resolved_ip, target_ip, INET_ADDRSTRLEN);
+        }
+        else
+        {
+            if (resolve_hostname(target_ip, resolved_ip) != 0)
+            {
+                fprintf(stderr, "Error: Unable to resolve hostname %s\n", target_ip);
+                free(source_ip);
+                tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
+                continue;
+            }
+        }
+
+        // printf("Resolved IP: |%s|\n", resolved_ip);
+
+
+        if (ctx->scans & FLAG_SYN)
+        {
+            // printf("Scanning SYN111\n");
+            nmap(S_SYN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+        }
+        if (ctx->scans & FLAG_NULL)
+        {
+            // printf("Scanning NULL\n");
+            nmap(S_NULL, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+        }
+        if (ctx->scans & FLAG_FIN)
+        {
+            // printf("Scanning FIN\n");
+            nmap(S_FIN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+        }
+        if (ctx->scans & FLAG_XMAS)
+        {
+            nmap(S_XMAS, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+        }
+        if (ctx->scans & FLAG_ACK)
+        {
+            nmap(S_ACK, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+        }
+
+        tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
+
+    }
+    // }
+    return 0;
+}
 
 
 // int main(int argc, char *argv[])

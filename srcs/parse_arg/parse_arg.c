@@ -191,7 +191,7 @@ void get_scans(char* arg, nmap_context* ctx)
     scan = strtok(arg, ",");
     while (scan)
     {
-        for (i = 0; (get_scan_name(i) != NULL) && (strcmp(scan, get_scan_name(i)) != 0); i++)
+        for (i = 0; (get_scan_name(i) != NULL) && (strcasecmp(scan, get_scan_name(i)) != 0); i++)
             ;
 
         if (get_scan_name(i))
@@ -213,6 +213,9 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
 
     /* TODO review*/
     memset(ctx, 0, sizeof(nmap_context));
+
+    ctx->port_range[0] = 1;
+    ctx->port_range[1] = 1024;
 
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
@@ -283,6 +286,10 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
         tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
     }
 
+    if (ctx->scans == 0)
+    {
+        ctx->scans = S_SYN | S_NULL | S_FIN | S_XMAS | S_ACK | S_UDP;
+    }
 
     // stdin_buffer = NULL;
     // for (int i = optind+1; i < argc; i++)

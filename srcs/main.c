@@ -25,5 +25,7 @@ int main(int argc, char **argv)
 
     parse_args(argc, argv, &context);
 
+    nmap_main(&context);
+
     return 0;
 }
