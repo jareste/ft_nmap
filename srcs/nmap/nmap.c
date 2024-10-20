@@ -12,13 +12,15 @@
 #include <sys/select.h>
 #include <netdb.h>
 #include <time.h>
+#include <pthread.h>
+#include <stdatomic.h>
 
 #include <ft_nmap.h>
 #include <nmap_api.h>
 #include <ft_malloc.h>
 
-#define PCKT_LEN 8192
-#define MAX_PORTS 1024
+#define PCKT_LEN    8192
+#define MAX_PORTS   1024
 
 typedef struct {
     const char* service; /* service name */
@@ -27,7 +29,27 @@ typedef struct {
     bool        any_open; /* if any scan marked as open */
 } scan_result;
 
-static scan_result results[MAX_PORTS];
+typedef struct {
+    int start_port;
+    int end_port;
+    char* target_ip;
+    int scan_type;
+    int worker_id;
+} task_param;
+
+typedef struct {
+    int         task_id;       // Task ID
+    task_param* task_param;    // Parameter for the task
+    bool        active;       // Whether this worker is currently processing a task
+    bool        exit;         // Indicates if the worker should terminate
+} worker_task;
+
+typedef struct {
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    worker_task task;
+    bool ready;
+} worker_info;
 
 struct pseudo_header {
     u_int32_t source_address;
@@ -36,6 +58,18 @@ struct pseudo_header {
     u_int8_t protocol;
     u_int16_t tcp_length;
 };
+
+worker_info *workers;
+pthread_t *threads;
+
+static scan_result results[MAX_PORTS];
+static int worker_count = 1;
+
+atomic_int next_task_id = 0;
+
+int generate_task_id() {
+    return atomic_fetch_add(&next_task_id, 1);
+}
 
 int get_bitmask(ScanType scan)
 {
@@ -59,6 +93,117 @@ int get_bitmask(ScanType scan)
  
     return 1 << (scan - 1);
 }
+
+/* WORKERS */
+void* worker_thread(void* arg)
+{
+    worker_info* winfo = (worker_info*)arg;
+
+    while (true)
+    {
+        pthread_mutex_lock(&winfo->mutex);
+
+        while (!winfo->ready)
+        {
+            pthread_cond_wait(&winfo->cond, &winfo->mutex);
+        }
+
+        if (winfo->task.exit)
+        {
+            pthread_mutex_unlock(&winfo->mutex);
+            break;
+        }
+
+        winfo->ready = false;
+        winfo->task.active = false;
+
+        pthread_mutex_unlock(&winfo->mutex);
+    }
+
+    return NULL;
+}
+
+void initialize_workers()
+{
+    workers = (worker_info*)malloc(sizeof(worker_info) * worker_count);
+    threads = (pthread_t*)malloc(sizeof(pthread_t) * worker_count);
+
+    for (int i = 0; i < worker_count; i++)
+    {
+        pthread_mutex_init(&workers[i].mutex, NULL);
+        pthread_cond_init(&workers[i].cond, NULL);
+
+        workers[i].ready = false;
+        workers[i].task.active = false;
+        workers[i].task.exit = false;
+
+        if (pthread_create(&threads[i], NULL, worker_thread, &workers[i]) != 0)
+        {
+            perror("Failed to create thread");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+void assign_task_to_worker(task_param* task_param)
+{
+    int worker_id = -1;
+    int task_id = generate_task_id();
+
+    while (true)
+    {
+        for (int i = 0; i < worker_count; i++)
+        {
+            pthread_mutex_lock(&workers[i].mutex);
+            if (!workers[i].task.active)
+            {
+                worker_id = i;
+                break;
+            }
+            pthread_mutex_unlock(&workers[i].mutex);
+        }
+
+        if (worker_id != -1)
+        {
+            workers[worker_id].task.task_id = task_id;
+            workers[worker_id].task.task_param = task_param;
+            workers[worker_id].task.active = true;
+
+            workers[worker_id].ready = true;
+            pthread_cond_signal(&workers[worker_id].cond);
+
+            pthread_mutex_unlock(&workers[worker_id].mutex);
+            break;
+        }
+
+        usleep(10000);
+    }
+}
+
+void shutdown_workers()
+{
+    for (int i = 0; i < worker_count; i++)
+    {
+        pthread_mutex_lock(&workers[i].mutex);
+
+        workers[i].task.exit = true;
+        workers[i].ready = true;
+        pthread_cond_signal(&workers[i].cond);
+
+        pthread_mutex_unlock(&workers[i].mutex);
+    }
+
+    for (int i = 0; i < worker_count; i++)
+    {
+        pthread_join(threads[i], NULL);
+        pthread_mutex_destroy(&workers[i].mutex);
+        pthread_cond_destroy(&workers[i].cond);
+    }
+}
+
+
+
+/* WORKERS END */
 
 /* UDP */
 void send_udp_packet(int sock, struct sockaddr_in *target, int port)
@@ -696,6 +841,8 @@ int nmap_main(nmap_context* ctx)
     double elapsed;
     char *source_ip = malloc(INET_ADDRSTRLEN);
     bool first_time = true;
+    worker_count = ctx->speedup;
+    initialize_workers();
 
     while (tmp)
     {
@@ -768,6 +915,8 @@ int nmap_main(nmap_context* ctx)
 
         tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
     }
+
+    shutdown_workers();
 
     free(source_ip);
     return 0;
