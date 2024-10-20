@@ -32,6 +32,7 @@ typedef struct {
 typedef struct {
     int start_port;
     int end_port;
+    char* source_ip;
     char* target_ip;
     int scan_type;
     int worker_id;
@@ -58,6 +59,10 @@ struct pseudo_header {
     u_int8_t protocol;
     u_int16_t tcp_length;
 };
+
+int nmap(int scan_type, char* source_ip, char* target_ip, int start_port, int end_port);
+int udp(char* target_ip, int start_port, int end_port);
+void set_nonblocking(int sock);
 
 worker_info *workers;
 pthread_t *threads;
@@ -95,9 +100,20 @@ int get_bitmask(ScanType scan)
 }
 
 /* WORKERS */
+void create_task_param(task_param* task_param, char* source_ip, char* target_ip, int start_port, int end_port, int scan_type)
+{
+    task_param->source_ip = source_ip;
+    task_param->target_ip = target_ip;
+    task_param->start_port = start_port;
+    task_param->end_port = end_port;
+    task_param->scan_type = scan_type;
+}
+
 void* worker_thread(void* arg)
 {
     worker_info* winfo = (worker_info*)arg;
+    task_param* task_param = NULL;
+
 
     while (true)
     {
@@ -114,6 +130,15 @@ void* worker_thread(void* arg)
             break;
         }
 
+        task_param = winfo->task.task_param;
+
+        if (task_param->scan_type == S_UDP)
+            udp(task_param->target_ip, task_param->start_port, task_param->end_port);
+        else
+            nmap(task_param->scan_type, task_param->source_ip, task_param->target_ip, task_param->start_port, task_param->end_port);
+
+
+        /* reset and mark it ready for performing something new. */
         winfo->ready = false;
         winfo->task.active = false;
 
@@ -121,6 +146,20 @@ void* worker_thread(void* arg)
     }
 
     return NULL;
+}
+
+/* returns true if any worker still in progress */
+bool all_workers_ready()
+{
+    for (int i = 0; i < worker_count; i++)
+    {
+        if (workers[i].ready)
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 void initialize_workers()
@@ -206,8 +245,7 @@ void shutdown_workers()
 /* WORKERS END */
 
 /* UDP */
-void send_udp_packet(int sock, struct sockaddr_in *target, int port)
-{
+void send_udp_packet(int sock, struct sockaddr_in *target, int port) {
     unsigned char dns_query[33] = {
         0x12, 0x34,  // Transaction ID
         0x01, 0x00,  // Flags: standard query
@@ -223,67 +261,44 @@ void send_udp_packet(int sock, struct sockaddr_in *target, int port)
         0x00, 0x01   // Class: IN (Internet)
     };
 
-    // If scanning port 53 (DNS), send a DNS query
-    if (port == 53)
-    {
-        if (sendto(sock, dns_query, sizeof(dns_query), 0, (struct sockaddr *)target, sizeof(*target)) < 0)
-        {
-            perror("sendto failed");
-        }
-        else
-        {
-            // printf("Sent DNS query to %s:%d\n", inet_ntoa(target->sin_addr), ntohs(target->sin_port));
-        }
-    }
-    else
-    {
-        const char *test_message = "Hello, UDP Servicse";
-        if (sendto(sock, test_message, strlen(test_message), 0, (struct sockaddr *)target, sizeof(*target)) < 0)
-        {
-            perror("sendto failed");
-        }
-        else
-        {
-            // printf("Sent UDP packet to %s:%d\n", inet_ntoa(target->sin_addr), ntohs(target->sin_port));
-        }
+    const char *test_message = "Hello, UDP Service";
+    const void *message;
+    size_t message_length;
+
+    // If scanning port 53 (DNS), send a DNS query; otherwise, send a simple UDP packet
+    if (port == 53) {
+        message = dns_query;
+        message_length = sizeof(dns_query);
+    } else {
+        message = test_message;
+        message_length = strlen(test_message);
     }
 
-    char buffer[1024];
-    struct sockaddr_in response;
-    socklen_t len = sizeof(response);
-    int received = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&response, &len);
-
-    if (received < 0)
-    {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-        {
-            results[port].is_open[5] = 2;
-            results[port].scan_open |= FLAG_UDP;
-
-            // printf("No response on port %d (open or filtered)\n", ntohs(target->sin_port));
+    // Retry sending if the system buffer is temporarily unavailable
+    int retries = 5;
+    while (retries > 0) {
+        if (sendto(sock, message, message_length, 0, (struct sockaddr *)target, sizeof(*target)) < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                retries--;
+                usleep(10000);  // Wait for 10 milliseconds before retrying
+                continue;
+            } else {
+                perror("sendto failed");
+            }
         }
-        else
-        {
-            results[port].is_open[5] = 2;
-            results[port].scan_open |= FLAG_UDP;
-
-            // perror("recvfrom failed");
-        }
-    }
-    else
-    {
-        results[port].is_open[5] = 1;
-        results[port].scan_open |= FLAG_UDP;
-        results[port].service = port == 53?"domain":"Unassigned";
-        results[port].any_open = true;
-
-        
-        // buffer[received] = '\0';  // Null-terminate the received data
-        // printf("Received response from %s:%d - %s\n", inet_ntoa(response.sin_addr), ntohs(response.sin_port), buffer);
+        break;
     }
 }
 
-void set_socket_timeout(int sock, int sec, int usec) {
+void set_socket_send_buffer(int sock) {
+    int buffer_size = 1024 * 1024;  // 1MB buffer size
+    if (setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &buffer_size, sizeof(buffer_size)) < 0) {
+        perror("Failed to set socket send buffer size");
+    }
+}
+
+void set_socket_timeout(int sock, int sec, int usec)
+{
     struct timeval timeout;
     timeout.tv_sec = sec;
     timeout.tv_usec = usec;
@@ -292,25 +307,66 @@ void set_socket_timeout(int sock, int sec, int usec) {
 
 void scan_udp_ports(const char *target_ip, int start_port, int end_port) {
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) {
+    if (sock < 0)
+    {
         perror("Socket creation failed");
         return;
     }
+    
+    set_socket_send_buffer(sock);
+    set_nonblocking(sock);
+    set_socket_timeout(sock, 1, 0);  // Set timeout for receiving data
 
-    set_socket_timeout(sock, 2, 0);
-
+    // Send packets to all ports quickly
     for (int port = start_port; port <= end_port; port++) {
         struct sockaddr_in target;
         target.sin_family = AF_INET;
         target.sin_port = htons(port);
         inet_pton(AF_INET, target_ip, &target.sin_addr);
 
-        // printf("Scanning UDP port %d...\n", port);
         send_udp_packet(sock, &target, port);
+    }
+
+    // Use select to handle multiple responses at once
+    fd_set readfds;
+    struct timeval timeout;
+    char buffer[1024];
+    struct sockaddr_in response;
+    socklen_t len = sizeof(response);
+    int received;
+
+    FD_ZERO(&readfds);
+    FD_SET(sock, &readfds);
+
+    // Monitor for responses
+    timeout.tv_sec = 2;  // Timeout value for how long to wait for responses
+    timeout.tv_usec = 0;
+
+    while (select(sock + 1, &readfds, NULL, NULL, &timeout) > 0) {
+        if (FD_ISSET(sock, &readfds)) {
+            received = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&response, &len);
+            if (received >= 0) {
+                int port = ntohs(response.sin_port);
+                results[port].is_open[5] = 1;
+                results[port].scan_open |= FLAG_UDP;
+                results[port].service = port == 53 ? "domain" : "Unassigned";
+                results[port].any_open = true;
+
+                // buffer[received] = '\0';  // Null-terminate the received data
+                // printf("Received response from %s:%d - %s\n", inet_ntoa(response.sin_addr), port, buffer);
+            }
+        }
+
+        // Reset and continue checking
+        FD_ZERO(&readfds);
+        FD_SET(sock, &readfds);
+        timeout.tv_sec = 2;
+        timeout.tv_usec = 0;
     }
 
     close(sock);
 }
+
 
 int udp(char* target_ip, int start_port, int end_port)
 {
@@ -877,24 +933,76 @@ int nmap_main(nmap_context* ctx)
             }
         }
 
-        if (ctx->scans & FLAG_SYN)
-            nmap(S_SYN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
-        
-        if (ctx->scans & FLAG_NULL)
-            nmap(S_NULL, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
-        
-        if (ctx->scans & FLAG_FIN)
-            nmap(S_FIN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+        if (worker_count > 0)
+        {
+            if (ctx->scans & FLAG_SYN)
+            {
+                task_param param;
+                create_task_param(&param, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_SYN);
+                assign_task_to_worker(&param);
+            }
 
-        if (ctx->scans & FLAG_XMAS)
-            nmap(S_XMAS, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+            if (ctx->scans & FLAG_NULL)
+            {
+                task_param param;
+                create_task_param(&param, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_NULL);
+                assign_task_to_worker(&param);
+            }
 
-        if (ctx->scans & FLAG_ACK)
-            nmap(S_ACK, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+            if (ctx->scans & FLAG_FIN)
+            {
+                task_param param;
+                create_task_param(&param, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_FIN);
+                assign_task_to_worker(&param);
+            }
 
-        if (ctx->scans & FLAG_UDP)
-            udp(resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+            if (ctx->scans & FLAG_XMAS)
+            {
+                task_param param;
+                create_task_param(&param, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_XMAS);
+                assign_task_to_worker(&param);
+            }
 
+            if (ctx->scans & FLAG_ACK)
+            {
+                task_param param;
+                create_task_param(&param, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_ACK);
+                assign_task_to_worker(&param);
+            }
+
+            if (ctx->scans & FLAG_UDP)
+            {
+                task_param param;
+                create_task_param(&param, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_UDP);
+                assign_task_to_worker(&param);
+            }
+            
+            /* wait all workers to be done. */
+            while (!(all_workers_ready()))
+            {
+                usleep(10000);
+            }
+        }
+        else
+        {
+            if (ctx->scans & FLAG_SYN)
+                nmap(S_SYN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+            
+            if (ctx->scans & FLAG_NULL)
+                nmap(S_NULL, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+            
+            if (ctx->scans & FLAG_FIN)
+                nmap(S_FIN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+
+            if (ctx->scans & FLAG_XMAS)
+                nmap(S_XMAS, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+
+            if (ctx->scans & FLAG_ACK)
+                nmap(S_ACK, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+
+            if (ctx->scans & FLAG_UDP)
+                udp(resolved_ip, ctx->port_range[0], ctx->port_range[1]);
+        }
        
         for (int port = ctx->port_range[0]; port <= ctx->port_range[1]; port++)
         {

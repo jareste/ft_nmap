@@ -217,6 +217,6 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
     if (ctx->scans == 0)
         ctx->scans = FLAG_SYN | FLAG_NULL | FLAG_FIN | FLAG_XMAS | FLAG_ACK | FLAG_UDP;
 
-    if (ctx->speedup == 0) ctx->speedup = 1;
+    if (ctx->speedup == 0) ctx->speedup = 0;
 
 }
