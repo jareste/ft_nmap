@@ -417,7 +417,7 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
         FD_ZERO(&readfds);
         FD_SET(sock, &readfds);
 
-        timeout.tv_sec = 2;
+        timeout.tv_sec = 1;
         timeout.tv_usec = 0;
 
         int ret = select(sock + 1, &readfds, NULL, NULL, &timeout);
@@ -510,6 +510,8 @@ int nmap(int scan_type, char* source_ip, char* target_ip, int start_port, int en
 {
     int sock;
 
+    // printf("Scanning target %s from source %s\n", target_ip, source_ip);
+
     sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
     if (sock < 0)
     {
@@ -528,17 +530,14 @@ int nmap(int scan_type, char* source_ip, char* target_ip, int start_port, int en
         ft_assert(0, "Setting IP_HDRINCL failed");
     }
     
+    // printf("Scanning ports %d to %d\n", start_port, end_port);
+
     send_packets(sock, target_ip, source_ip, scan_type, start_port, end_port);
+
+    // printf("Waiting for responses...\n");
 
     receive_responses(sock, target_ip, ports_status, scan_type);
 
-    for (int port = 1; port <= MAX_PORTS; port++)
-    {
-        if (ports_status[port] == 1)
-        {
-            banner_grab(target_ip, port);
-        }
-    }
 
     close(sock);
     return 0;
@@ -749,6 +748,15 @@ int nmap_main(nmap_context* ctx)
         if (ctx->scans & FLAG_UDP)
             udp(resolved_ip, ctx->port_range[0], ctx->port_range[1]);
 
+       
+        for (int port = ctx->port_range[0]; port <= ctx->port_range[1]; port++)
+        {
+            if (results[port].any_open == true)
+            {
+                banner_grab(resolved_ip, port);
+            }
+        }
+
         /* time */
         clock_gettime(CLOCK_MONOTONIC, &end);
 
@@ -765,59 +773,3 @@ int nmap_main(nmap_context* ctx)
     return 0;
 }
 
-
-// int main(int argc, char *argv[])
-// {
-//     if (argc != 3)
-//     {
-//         printf("Usage: %s <target IP> <scan type>\n", argv[0]);
-//         printf("Scan types: 1=SYN, 2=NULL, 3=FIN, 4=XMAS, 5=ACK\n");
-//         return -1;
-//     }
-
-//     const char *target_ip = argv[1];
-//     char *source_ip = malloc(INET_ADDRSTRLEN);
-//     get_local_ip(&source_ip);  // Get the local IP dynamically
-
-//     int scan_type = atoi(argv[2]);
-
-//     int sock;
-
-//     printf("Scanning target %s from source %s\n", target_ip, source_ip);
-//     // Create a raw socket
-//     sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
-//     if (sock < 0)
-//     {
-//         perror("Socket creation failed");
-//         return -1;
-//     }
-
-//     int ports_status[MAX_PORTS];
-//     for (int i = 0; i < MAX_PORTS; i++) {
-//         ports_status[i] = -1;
-//     }
-
-//     // Set IP_HDRINCL to tell the kernel that headers are included in the packet
-//     int one = 1;
-//     if (setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0)
-//     {
-//         perror("Setting IP_HDRINCL failed");
-//         return -1;
-//     }
-
-//     send_packets(sock, target_ip, source_ip, scan_type, 1, MAX_PORTS);
-
-//     // Wait for responses asynchronously
-//     receive_responses(sock, target_ip, ports_status, scan_type);
-
-//     for (int port = 1; port <= MAX_PORTS; port++)
-//     {
-//         if (ports_status[port] == 1)
-//         {
-//             banner_grab(target_ip, port);
-//         }
-//     }
-
-//     close(sock);
-//     return 0;
-// }
