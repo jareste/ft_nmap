@@ -555,7 +555,7 @@ int resolve_hostname(const char *hostname, char *resolved_ip)
 
     if ((status = getaddrinfo(hostname, NULL, &hints, &res)) != 0)
     {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
+        // fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
         return -1;
     }
 
@@ -626,7 +626,8 @@ void print_scan_result(int *is_open, int scans)
     }
 }
 
-void print_result(nmap_context* ctx, const char* target_ip) {
+void print_result(nmap_context* ctx, const char* target_ip)
+{
     int start_port = ctx->port_range[0];
     int end_port = ctx->port_range[1];
     int total_ports = end_port - start_port + 1;
@@ -701,7 +702,7 @@ int nmap_main(nmap_context* ctx)
     {
         if (!first_time)
         {
-            printf("\n\n");
+            printf("############################################################\n\n");
         }
         first_time = false;
 
@@ -725,7 +726,6 @@ int nmap_main(nmap_context* ctx)
             if (resolve_hostname(target_ip, resolved_ip) != 0)
             {
                 fprintf(stderr, "Error: Unable to resolve hostname %s\n", target_ip);
-                free(source_ip);
                 tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
                 continue;
             }
@@ -761,6 +761,7 @@ int nmap_main(nmap_context* ctx)
         tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
     }
 
+    free(source_ip);
     return 0;
 }
 

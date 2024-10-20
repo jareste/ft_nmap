@@ -3,5 +3,4 @@
 
 int nmap_main(nmap_context* ctx);
 
-
 #endif
