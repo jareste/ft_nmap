@@ -157,10 +157,14 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
         {"file", required_argument, 0, 'f'},
         {"speedup", required_argument, 0, 0},
         {"scan", required_argument, 0, 's'},
+        {"os", no_argument, 0, 'O'},
+        {"fast", no_argument, 0, 'F'},
+        {"max-rate", no_argument, 0, 'm'},
+        {"open", no_argument, 0, 1},
         {0, 0, 0, 0}
     };
 
-    while ((opt = getopt_long(argc, argv, "?hp:i:f:s:O", long_options, NULL)) != -1)
+    while ((opt = getopt_long(argc, argv, "?hp:i:f:s:", long_options, NULL)) != -1)
     {
         switch (opt)
         {
@@ -194,6 +198,27 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
                 break;
             case 'O': /* os */
                 ctx->flags |= FLAG_OS;
+                break;
+            case 'F': /* fast */
+                ctx->flags |= FLAG_FAST;
+                break;
+            case 'm': /* max-rate */
+                ctx->flags |= FLAG_MXRATE;
+                if (optarg)
+                {
+                    ctx->max_rate = strtoull(optarg, NULL, 10);
+                    if (ctx->max_rate < 1)
+                    {
+                        ft_assert(0, "ft_nmap: Fatal error: Max rate value is less than 1.\n");
+                    }
+                }
+                else
+                {
+                    ft_assert(0, "ft_nmap: Fatal error: Max rate value is missing.\n");
+                }
+                break;
+            case 1: /* open */
+                ctx->flags |= FLAG_OPEN;
                 break;
             case 0: /* speedup */
                 ctx->flags |= FLAG_SPEED;

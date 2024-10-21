@@ -74,6 +74,7 @@ static scan_result results[MAX_PORTS];
 static int worker_count = 1;
 static char* os = NULL;
 pthread_mutex_t results_mutex;
+static uint64_t max_rate = 0;
 
 atomic_int next_task_id = 0;
 
@@ -519,6 +520,7 @@ void send_packets(int sock, const char *target_ip, const char *source_ip, int sc
         else
         {
         }
+        usleep(max_rate);
         // usleep(50000);  // Delay 1 millisecond between sending packets
     }
 }
@@ -812,43 +814,61 @@ void print_scan_status(int status)
     }
 }
 
-void print_scan_result(int *is_open, int scans)
+void print_scan_result(int *is_open, int scans, bool flag_open)
 {
     if (scans & FLAG_SYN)
     {
-        printf(" SYN(");
-        print_scan_status(is_open[S_SYN - 1]);
-        printf(")");
+        if (!flag_open || (flag_open && is_open[S_SYN - 1] >= 1))
+        {
+            printf(" SYN(");
+            print_scan_status(is_open[S_SYN - 1]);
+            printf(")");
+        }
     }
     if (scans & FLAG_NULL)
     {
-        printf(" NULL(");
-        print_scan_status(is_open[S_NULL - 1]);
-        printf(")");
+        if (!flag_open || (flag_open && is_open[S_NULL - 1] >= 1))
+        {
+            printf(" NULL(");
+            print_scan_status(is_open[S_NULL - 1]);
+            printf(")");
+        }
     }
     if (scans & FLAG_FIN)
     {
-        printf(" FIN(");
-        print_scan_status(is_open[S_FIN - 1]);
-        printf(")");
+        if (!flag_open || (flag_open && is_open[S_FIN - 1] >= 1))
+        {
+            printf(" FIN(");
+            print_scan_status(is_open[S_FIN - 1]);
+            printf(")");
+        }
     }
     if (scans & FLAG_XMAS)
     {
-        printf(" XMAS(");
-        print_scan_status(is_open[S_XMAS - 1]);
-        printf(")");
+        if (!flag_open || (flag_open && is_open[S_XMAS - 1] >= 1))
+        {
+            printf(" XMAS(");
+            print_scan_status(is_open[S_XMAS - 1]);
+            printf(")");
+        }
     }
     if (scans & FLAG_ACK)
     {
-        printf(" ACK(");
-        print_scan_status(is_open[S_ACK - 1]);
-        printf(")");
+        if (!flag_open || (flag_open && is_open[S_ACK - 1] >= 1))
+        {
+            printf(" ACK(");
+            print_scan_status(is_open[S_ACK - 1]);
+            printf(")");
+        }
     }
     if (scans & FLAG_UDP)
     {
-        printf(" UDP(");
-        print_scan_status(is_open[S_UDP - 1]);
-        printf(")");
+        if (!flag_open || (flag_open && is_open[S_UDP - 1] >= 1))
+        {
+            printf(" UDP(");
+            print_scan_status(is_open[S_UDP - 1]);
+            printf(")");
+        }
     }
 }
 
@@ -905,7 +925,7 @@ void print_result(nmap_context* ctx, const char* target_ip)
         if ((results[i].any_open == true) || (results[i].any_filtered && open_ports <= 20 && filtered_ports <= 20))
         {
             printf("%-6d %-20s ", i, results[i].service ? results[i].service : "Unassigned");
-            print_scan_result(results[i].is_open, results[i].scan_open);
+            print_scan_result(results[i].is_open, results[i].scan_open, ctx->flags & FLAG_OPEN);
             printf("\t%-10s\n", "Open");
         }
         else
@@ -929,7 +949,7 @@ void print_result(nmap_context* ctx, const char* target_ip)
             if (results[i].any_open == false)
             {
                 printf("%-6d %-20s ", i, results[i].service ? results[i].service : "Unassigned");
-                print_scan_result(results[i].is_open, results[i].scan_open);
+                print_scan_result(results[i].is_open, results[i].scan_open, ctx->flags & FLAG_OPEN);
                 printf("\t%-10s\n", "Closed");
             }
         }
@@ -1085,6 +1105,10 @@ int nmap_main(nmap_context* ctx)
     worker_count = ctx->speedup;
     // int sock;
     initialize_workers();
+
+    if (ctx->flags & FLAG_MXRATE)
+        max_rate = ctx->max_rate * 1000;
+
 
     // sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
     // if (sock < 0)

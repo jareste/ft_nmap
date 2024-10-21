@@ -2,6 +2,7 @@
 #define FT_NMAP_H
 
 #include <ft_list.h>
+#include <stdint.h>
 
 #define UNUSED_PARAM(x) (void)(x)
 
@@ -43,6 +44,7 @@ typedef struct {
     int         flags;
     int         scans; /* this will be set as hexa flags. */
     int         speedup;
+    uint64_t    max_rate;
     // ScanType    type;
 } nmap_context;
 
@@ -55,9 +57,9 @@ typedef struct {
 #define FLAG_PORTS  0x0040
 #define FLAG_SPEED  0x0080
 #define FLAG_OS     0x0100
-#define FLAG_FREE3  0x0200
-#define FLAG_FREE4  0x0400
-#define FLAG_FREE5  0x0800
+#define FLAG_FAST   0x0200
+#define FLAG_MXRATE 0x0400
+#define FLAG_OPEN   0x0800
 
 #define FT_NMAP_USAGE(x)                                                        \
     do {                                                                       \
@@ -72,6 +74,8 @@ typedef struct {
         printf("  -f, --file               Specify a file containing IP addresses (one per line)\n");\
         printf("      --speedup            Set the number of threads to speed up the scan (default: 0, max: 250)\n");\
         printf("  -s, --scan               Specify the type of scan to perform (e.g., SYN, NULL, ACK, FIN, XMAS, UDP)\n");\
+        printf("  -O, --os                 Enable OS detection\n");             \
+        printf("  -F, --fast               Enable fast scan mode\n");           \
         printf("\nExamples:\n");                                               \
         printf("  ft_nmap --ip 192.168.1.1 --ports 22 --scan SYN\n");          \
         printf("  ft_nmap --file targets.txt --ports 1-1024 --speedup 100\n"); \
