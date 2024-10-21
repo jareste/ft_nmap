@@ -37,7 +37,7 @@ typedef struct {
     char* target_ip;
     int scan_type;
     int worker_id;
-    int sock;
+    // int sock;
 } task_param;
 
 typedef struct {
@@ -62,7 +62,7 @@ struct pseudo_header {
     u_int16_t tcp_length;
 };
 
-int nmap(int scan_type, char* source_ip, char* target_ip, int start_port, int end_port, int sock);
+int nmap(int scan_type, char* source_ip, char* target_ip, int start_port, int end_port);
 int udp(char* target_ip, int start_port, int end_port);
 void set_nonblocking(int sock);
 
@@ -104,14 +104,13 @@ int get_bitmask(ScanType scan)
 }
 
 /* WORKERS */
-void create_task_param(task_param* task_param, char* source_ip, char* target_ip, int start_port, int end_port, int scan_type, int sock)
+void create_task_param(task_param* task_param, char* source_ip, char* target_ip, int start_port, int end_port, int scan_type)
 {
     task_param->source_ip = source_ip;
     task_param->target_ip = target_ip;
     task_param->start_port = start_port;
     task_param->end_port = end_port;
     task_param->scan_type = scan_type;
-    task_param->sock = sock;
 }
 
 void* worker_thread(void* arg)
@@ -140,7 +139,7 @@ void* worker_thread(void* arg)
         if (task_param->scan_type == S_UDP)
             udp(task_param->target_ip, task_param->start_port, task_param->end_port);
         else
-            nmap(task_param->scan_type, task_param->source_ip, task_param->target_ip, task_param->start_port, task_param->end_port, task_param->sock);
+            nmap(task_param->scan_type, task_param->source_ip, task_param->target_ip, task_param->start_port, task_param->end_port);
 
 
         /* reset and mark it ready for performing something new. */
@@ -732,25 +731,37 @@ void get_local_ip(char **ip)
     close(temp_sock);
 }
 
-int nmap(int scan_type, char* source_ip, char* target_ip, int start_port, int end_port, int sock)
-{
+int nmap(int scan_type, char* source_ip, char* target_ip, int start_port, int end_port) {
+    int sock;
+    
+    // Create a new socket for each thread
+    sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+    if (sock < 0) {
+        perror("Socket creation failed");
+        return -1;
+    }
+    
+    set_nonblocking(sock);
+
+    int one = 1;
+    if (setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0) {
+        perror("Setting IP_HDRINCL failed");
+        close(sock);
+        return -1;
+    }
+
     int ports_status[MAX_PORTS];
-    for (int i = 0; i < MAX_PORTS; i++)
-    {
+    for (int i = 0; i < MAX_PORTS; i++) {
         ports_status[i] = -1;
-    }    
-    // printf("Scanning ports %d to %d\n", start_port, end_port);
+    }
 
     send_packets(sock, target_ip, source_ip, scan_type, start_port, end_port);
-
-    // printf("Waiting for responses...\n");
-
     receive_responses(sock, target_ip, ports_status, scan_type);
-
 
     close(sock);
     return 0;
 }
+
 
 int resolve_hostname(const char *hostname, char *resolved_ip)
 {
@@ -1051,21 +1062,21 @@ int nmap_main(nmap_context* ctx)
     char *source_ip = malloc(INET_ADDRSTRLEN);
     bool first_time = true;
     worker_count = ctx->speedup;
-    int sock;
+    // int sock;
     initialize_workers();
 
-    sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
-    if (sock < 0)
-    {
-        ft_assert(0, "Socket creation failed");
-    }
+    // sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+    // if (sock < 0)
+    // {
+    //     ft_assert(0, "Socket creation failed");
+    // }
 
 
-    int one = 1;
-    if (setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0)
-    {
-        ft_assert(0, "Setting IP_HDRINCL failed");
-    }
+    // int one = 1;
+    // if (setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0)
+    // {
+    //     ft_assert(0, "Setting IP_HDRINCL failed");
+    // }
 
 
     while (tmp)
@@ -1106,42 +1117,42 @@ int nmap_main(nmap_context* ctx)
             if (ctx->scans & FLAG_SYN)
             {
                 task_param *param_syn = (task_param*)malloc(sizeof(task_param));
-                create_task_param(param_syn, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_SYN, sock);
+                create_task_param(param_syn, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_SYN);
                 assign_task_to_worker(param_syn);
             }
 
             if (ctx->scans & FLAG_NULL)
             {
                 task_param *param_null = (task_param*)malloc(sizeof(task_param));
-                create_task_param(param_null, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_NULL, sock);
+                create_task_param(param_null, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_NULL);
                 assign_task_to_worker(param_null);
             }
 
             if (ctx->scans & FLAG_FIN)
             {
                 task_param *param_fin = (task_param*)malloc(sizeof(task_param));
-                create_task_param(param_fin, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_FIN, sock);
+                create_task_param(param_fin, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_FIN);
                 assign_task_to_worker(param_fin);
             }
 
             if (ctx->scans & FLAG_XMAS)
             {
                 task_param *param_xmas = (task_param*)malloc(sizeof(task_param));
-                create_task_param(param_xmas, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_XMAS, sock);
+                create_task_param(param_xmas, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_XMAS);
                 assign_task_to_worker(param_xmas);
             }
 
             if (ctx->scans & FLAG_ACK)
             {
                 task_param *param_ack = (task_param*)malloc(sizeof(task_param));
-                create_task_param(param_ack, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_ACK, sock);
+                create_task_param(param_ack, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_ACK);
                 assign_task_to_worker(param_ack);
             }
 
             if (ctx->scans & FLAG_UDP)
             {
                 task_param *param_udp = (task_param*)malloc(sizeof(task_param));
-                create_task_param(param_udp, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_UDP, sock);
+                create_task_param(param_udp, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_UDP);
                 assign_task_to_worker(param_udp);
             }
             
@@ -1154,19 +1165,19 @@ int nmap_main(nmap_context* ctx)
         else
         {
             if (ctx->scans & FLAG_SYN)
-                nmap(S_SYN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], sock);
+                nmap(S_SYN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
             
             if (ctx->scans & FLAG_NULL)
-                nmap(S_NULL, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], sock);
+                nmap(S_NULL, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
             
             if (ctx->scans & FLAG_FIN)
-                nmap(S_FIN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], sock);
+                nmap(S_FIN, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
 
             if (ctx->scans & FLAG_XMAS)
-                nmap(S_XMAS, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], sock);
+                nmap(S_XMAS, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
 
             if (ctx->scans & FLAG_ACK)
-                nmap(S_ACK, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], sock);
+                nmap(S_ACK, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1]);
 
             if (ctx->scans & FLAG_UDP)
                 udp(resolved_ip, ctx->port_range[0], ctx->port_range[1]);
