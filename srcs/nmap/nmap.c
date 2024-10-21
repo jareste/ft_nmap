@@ -28,6 +28,7 @@ typedef struct {
     int         is_open[6]; /* 1 == open, 2 == filtered, 0 == closed */
     int         scan_open; /* bitmask */
     bool        any_open; /* if any scan marked as open */
+    bool        any_filtered; /* if any scan marked as filtered */
 } scan_result;
 
 typedef struct {
@@ -296,7 +297,7 @@ void send_udp_packet(int sock, struct sockaddr_in *target, int port) {
 }
 
 void set_socket_send_buffer(int sock) {
-    int buffer_size = 1024 * 1024;  // 1MB buffer size
+    int buffer_size = 2 * 1024 * 1024;  // 1MB buffer size
     if (setsockopt(sock, SOL_SOCKET, SO_SNDBUF, &buffer_size, sizeof(buffer_size)) < 0) {
         perror("Failed to set socket send buffer size");
     }
@@ -518,6 +519,7 @@ void send_packets(int sock, const char *target_ip, const char *source_ip, int sc
         else
         {
         }
+        // usleep(50000);  // Delay 1 millisecond between sending packets
     }
 }
 
@@ -663,7 +665,7 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
                             ports_status[port] = 1;
                             results[port].any_open = true;
                         }
-                         else if ((scan_type == S_FIN || scan_type == S_XMAS || scan_type == S_NULL) && tcph->rst == 1)
+                        else if ((scan_type == S_FIN || scan_type == S_XMAS || scan_type == S_NULL) && tcph->rst == 1)
                         {
                             results[port].is_open[scan_type - 1] = 0;
                             results[port].scan_open |= get_bitmask(scan_type);
@@ -674,7 +676,8 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
                             results[port].is_open[scan_type - 1] = 2;
                             results[port].scan_open |= get_bitmask(scan_type);
                             ports_status[port] = 1;
-                            results[port].any_open = true;
+                            // results[port].any_open = true;
+                            results[port].any_filtered = true;
                         }
                         ports_left--;
                     }
@@ -731,27 +734,31 @@ void get_local_ip(char **ip)
     close(temp_sock);
 }
 
-int nmap(int scan_type, char* source_ip, char* target_ip, int start_port, int end_port) {
+int nmap(int scan_type, char* source_ip, char* target_ip, int start_port, int end_port)
+{
     int sock;
     
     // Create a new socket for each thread
     sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
-    if (sock < 0) {
+    if (sock < 0)
+    {
         perror("Socket creation failed");
         return -1;
     }
     
-    set_nonblocking(sock);
+    // set_nonblocking(sock);
 
     int one = 1;
-    if (setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0) {
+    if (setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0)
+    {
         perror("Setting IP_HDRINCL failed");
         close(sock);
         return -1;
     }
 
     int ports_status[MAX_PORTS];
-    for (int i = 0; i < MAX_PORTS; i++) {
+    for (int i = 0; i < MAX_PORTS; i++)
+    {
         ports_status[i] = -1;
     }
 
@@ -851,7 +858,9 @@ void print_result(nmap_context* ctx, const char* target_ip)
     int end_port = ctx->port_range[1];
     int total_ports = end_port - start_port + 1;
     int open_ports = 0;
+    int filtered_ports = 0;
     int closed_filtered_ports = 0;
+    int i;
 
     printf("Scan Configurations\n");
     printf("Target Ip-Address: %s\n", target_ip);
@@ -878,11 +887,23 @@ void print_result(nmap_context* ctx, const char* target_ip)
     printf("%-6s %-20s %-42s %-10s\n", "Port", "Service Name", "Results", "Conclusion");
     printf("-------------------------------------------------------------\n");
 
-    for (int i = start_port; i <= end_port; i++)
+    for (i = start_port; i <= end_port; i++)
     {
         if (results[i].any_open == true)
         {
             open_ports++;
+        }
+        if (results[i].any_filtered == true)
+        {
+            filtered_ports++;
+        }
+
+    }
+
+    for (i = start_port; i <= end_port; i++)
+    {
+        if ((results[i].any_open == true) || (results[i].any_filtered && open_ports <= 20 && filtered_ports <= 20))
+        {
             printf("%-6d %-20s ", i, results[i].service ? results[i].service : "Unassigned");
             print_scan_result(results[i].is_open, results[i].scan_open);
             printf("\t%-10s\n", "Open");
