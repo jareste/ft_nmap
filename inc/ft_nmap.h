@@ -54,7 +54,7 @@ typedef struct {
 #define FLAG_UDP    0x0020
 #define FLAG_PORTS  0x0040
 #define FLAG_SPEED  0x0080
-#define FLAG_FREE2  0x0100
+#define FLAG_OS     0x0100
 #define FLAG_FREE3  0x0200
 #define FLAG_FREE4  0x0400
 #define FLAG_FREE5  0x0800

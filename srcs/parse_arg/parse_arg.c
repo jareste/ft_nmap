@@ -160,7 +160,7 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
         {0, 0, 0, 0}
     };
 
-    while ((opt = getopt_long(argc, argv, "?hp:i:f:s:", long_options, NULL)) != -1)
+    while ((opt = getopt_long(argc, argv, "?hp:i:f:s:O", long_options, NULL)) != -1)
     {
         switch (opt)
         {
@@ -191,6 +191,9 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
                     fprintf(stderr, "Option -s contains garbage as argument: %s.\n", optarg);
                     fprintf(stderr, "This will become fatal error in the future.\n");
                 }
+                break;
+            case 'O': /* os */
+                ctx->flags |= FLAG_OS;
                 break;
             case 0: /* speedup */
                 ctx->flags |= FLAG_SPEED;

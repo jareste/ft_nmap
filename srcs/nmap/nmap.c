@@ -14,6 +14,7 @@
 #include <time.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <netinet/ip_icmp.h>
 
 #include <ft_nmap.h>
 #include <nmap_api.h>
@@ -69,6 +70,7 @@ pthread_t *threads;
 
 static scan_result results[MAX_PORTS];
 static int worker_count = 1;
+static char* os = NULL;
 
 atomic_int next_task_id = 0;
 
@@ -836,6 +838,12 @@ void print_result(nmap_context* ctx, const char* target_ip)
 
     printf("Scan Configurations\n");
     printf("Target Ip-Address: %s\n", target_ip);
+
+    if (os)
+    {
+        printf("OS: %s\n", os);
+    }
+
     printf("No of Ports to scan: %d\n", total_ports);
     printf("Scans to be performed: ");
     if (ctx->scans & FLAG_SYN) printf("SYN ");
@@ -889,6 +897,145 @@ void print_result(nmap_context* ctx, const char* target_ip)
         }
     }
 }
+
+/* Detect OS */
+void analyze_response_patterns(int ttl, int window_size, bool df_flag)
+{
+    int adjusted_ttl;
+
+    if (ttl <= 64)
+    {
+        adjusted_ttl = 64;
+    }
+    else if (ttl <= 128)
+    {
+        adjusted_ttl = 128;
+    }
+    else
+    {
+        adjusted_ttl = 255;
+    }
+
+    if (adjusted_ttl == 64 && (window_size == 29200 || window_size < 60000) && df_flag)
+    {
+        os = "Linux";
+    }
+    else if (adjusted_ttl == 128 && (window_size == 8192 || window_size == 65535) && df_flag)
+    {
+        os = "Windows";
+    }
+    else if (adjusted_ttl == 255 && window_size == 4128)
+    {
+        os = "Cisco";
+    }
+    else if (adjusted_ttl == 64 && window_size == 14600)
+    {
+        os = "FreeBSD";
+    }
+    else if (window_size == 0)
+    {
+        os = "Filtered/Complex";
+    }
+    else
+    {
+        os = "Unknown OS";
+    }
+}
+
+void send_icmp_probe(const char *target_ip)
+{
+    int icmp_sock = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if (icmp_sock == -1)
+    {
+        perror("ICMP socket creation failed");
+        return;
+    }
+
+    char icmp_packet[64];
+    struct icmphdr *icmp_hdr = (struct icmphdr *)icmp_packet;
+    memset(icmp_hdr, 0, sizeof(struct icmphdr));
+    icmp_hdr->type = ICMP_ECHO;
+    icmp_hdr->code = 0;
+    icmp_hdr->checksum = 0;
+    icmp_hdr->un.echo.id = htons(1234);
+    icmp_hdr->un.echo.sequence = htons(1);
+    icmp_hdr->checksum = csum((unsigned short *)icmp_packet, sizeof(icmp_packet));
+
+    struct sockaddr_in target;
+    target.sin_family = AF_INET;
+    inet_pton(AF_INET, target_ip, &target.sin_addr);
+
+    if (sendto(icmp_sock, icmp_packet, sizeof(icmp_packet), 0, (struct sockaddr *)&target, sizeof(target)) < 0)
+    {
+        perror("sendto failed (ICMP)");
+    }
+
+    close(icmp_sock);
+}
+
+void os_detection(const char *target_ip, int port, const char* source_ip)
+{
+    int sock;
+    struct sockaddr_in server;
+    char packet[PCKT_LEN];
+
+    sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+    if (sock == -1)
+    {
+        perror("Socket creation failed");
+        return;
+    }
+
+    server.sin_family = AF_INET;
+    server.sin_port = htons(port);
+    inet_pton(AF_INET, target_ip, &server.sin_addr);
+
+    create_packet(packet, &server, port, source_ip, S_SYN);
+    sendto(sock, packet, sizeof(struct iphdr) + sizeof(struct tcphdr), 0, (struct sockaddr *)&server, sizeof(server));
+
+    create_packet(packet, &server, port, source_ip, S_FIN);
+    sendto(sock, packet, sizeof(struct iphdr) + sizeof(struct tcphdr), 0, (struct sockaddr *)&server, sizeof(server));
+
+    create_packet(packet, &server, port, source_ip, S_XMAS);
+    sendto(sock, packet, sizeof(struct iphdr) + sizeof(struct tcphdr), 0, (struct sockaddr *)&server, sizeof(server));
+
+    send_icmp_probe(target_ip);
+
+    fd_set readfds;
+    struct timeval timeout;
+    char buffer[1024];
+    struct sockaddr_in response;
+    socklen_t len = sizeof(response);
+    int received;
+
+    FD_ZERO(&readfds);
+    FD_SET(sock, &readfds);
+
+    timeout.tv_sec = 2;
+    timeout.tv_usec = 0;
+
+    if (select(sock + 1, &readfds, NULL, NULL, &timeout) > 0)
+    {
+        if (FD_ISSET(sock, &readfds))
+        {
+            received = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&response, &len);
+            if (received >= 0)
+            {
+                struct iphdr *response_iph = (struct iphdr *)buffer;
+                struct tcphdr *response_tcph = (struct tcphdr *)(buffer + (response_iph->ihl * 4));
+
+                int ttl = response_iph->ttl;
+                int window_size = ntohs(response_tcph->window);
+                bool df_flag = (ntohs(response_iph->frag_off) & 0x4000) != 0;
+
+                analyze_response_patterns(ttl, window_size, df_flag);
+            }
+        }
+    }
+
+    close(sock);
+}
+/* Detect OS End */
 
 int nmap_main(nmap_context* ctx)
 {
@@ -1009,6 +1156,8 @@ int nmap_main(nmap_context* ctx)
             if (results[port].any_open == true)
             {
                 banner_grab(resolved_ip, port);
+                if (ctx->flags & FLAG_OS)
+                    os_detection(resolved_ip, port, source_ip);
             }
         }
 
