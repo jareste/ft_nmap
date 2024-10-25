@@ -75,6 +75,7 @@ static int worker_count = 1;
 static char* os = NULL;
 pthread_mutex_t results_mutex;
 static uint64_t max_rate = 0;
+static uint64_t min_rate = 0;
 
 atomic_int next_task_id = 0;
 
@@ -273,23 +274,30 @@ void send_udp_packet(int sock, struct sockaddr_in *target, int port) {
     size_t message_length;
 
     // If scanning port 53 (DNS), send a DNS query; otherwise, send a simple UDP packet
-    if (port == 53) {
+    if (port == 53)
+    {
         message = dns_query;
         message_length = sizeof(dns_query);
-    } else {
+    }
+    else
+    {
         message = test_message;
         message_length = strlen(test_message);
     }
 
-    // Retry sending if the system buffer is temporarily unavailable
     int retries = 5;
-    while (retries > 0) {
-        if (sendto(sock, message, message_length, 0, (struct sockaddr *)target, sizeof(*target)) < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+    while (retries > 0)
+    {
+        if (sendto(sock, message, message_length, 0, (struct sockaddr *)target, sizeof(*target)) < 0)
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
                 retries--;
                 usleep(10000);  // Wait for 10 milliseconds before retrying
                 continue;
-            } else {
+            }
+            else
+            {
                 perror("sendto failed");
             }
         }
@@ -312,7 +320,8 @@ void set_socket_timeout(int sock, int sec, int usec)
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
 }
 
-void scan_udp_ports(const char *target_ip, int start_port, int end_port) {
+void scan_udp_ports(const char *target_ip, int start_port, int end_port)
+{
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (sock < 0)
     {
@@ -325,7 +334,8 @@ void scan_udp_ports(const char *target_ip, int start_port, int end_port) {
     set_socket_timeout(sock, 1, 0);  // Set timeout for receiving data
 
     // Send packets to all ports quickly
-    for (int port = start_port; port <= end_port; port++) {
+    for (int port = start_port; port <= end_port; port++)
+    {
         struct sockaddr_in target;
         target.sin_family = AF_INET;
         target.sin_port = htons(port);
@@ -501,12 +511,21 @@ void send_packets(int sock, const char *target_ip, const char *source_ip, int sc
     sin.sin_family = AF_INET;
     sin.sin_addr.s_addr = inet_addr(target_ip);
 
+    uint64_t min_interval = min_rate ? 1000000 / min_rate : 0;
+    uint64_t max_interval = max_rate ? 1000000 / max_rate : 0;
+
+    struct timespec start, end, last_send;
+    uint64_t since_last_send;
+
+    clock_gettime(CLOCK_MONOTONIC, &last_send);
+
     for (int port = start_port; port <= end_port; port++)
     {
         memset(packet, 0, PCKT_LEN);
         create_packet(packet, &sin, port, source_ip, scan_type);
-
         sin.sin_port = htons(port);
+
+        clock_gettime(CLOCK_MONOTONIC, &start);
 
         if (sendto(sock, packet, sizeof(struct iphdr) + sizeof(struct tcphdr), 0, (struct sockaddr *)&sin, sizeof(sin)) < 0)
         {
@@ -517,13 +536,24 @@ void send_packets(int sock, const char *target_ip, const char *source_ip, int sc
             }
             ft_assert(0, "Packet send failed");
         }
-        else
+
+        clock_gettime(CLOCK_MONOTONIC, &end);
+        since_last_send = (end.tv_sec - last_send.tv_sec) * 1000000 + (end.tv_nsec - last_send.tv_nsec) / 1000;
+
+        if (max_interval > 0)
         {
+            usleep(max_interval);
         }
-        usleep(max_rate);
-        // usleep(50000);  // Delay 1 millisecond between sending packets
+
+        if (min_interval > 0 && since_last_send < min_interval)
+        {
+            usleep(min_interval - since_last_send);
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &last_send);
     }
 }
+
 
 static const char* services[] = {
     "HTTP", "SSH", "SMTP", "MySQL", "PostgreSQL", "FTP", "Telnet", "POP3", NULL
@@ -1103,26 +1133,13 @@ int nmap_main(nmap_context* ctx)
     char *source_ip = malloc(INET_ADDRSTRLEN);
     bool first_time = true;
     worker_count = ctx->speedup;
-    // int sock;
     initialize_workers();
 
     if (ctx->flags & FLAG_MXRATE)
         max_rate = ctx->max_rate * 1000;
 
-
-    // sock = socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
-    // if (sock < 0)
-    // {
-    //     ft_assert(0, "Socket creation failed");
-    // }
-
-
-    // int one = 1;
-    // if (setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0)
-    // {
-    //     ft_assert(0, "Setting IP_HDRINCL failed");
-    // }
-
+    if (ctx->flags & FLAG_MNRATE)
+        min_rate = ctx->min_rate * 1000;
 
     while (tmp)
     {

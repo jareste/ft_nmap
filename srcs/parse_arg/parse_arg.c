@@ -159,7 +159,8 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
         {"scan", required_argument, 0, 's'},
         {"os", no_argument, 0, 'O'},
         {"fast", no_argument, 0, 'F'},
-        {"max-rate", no_argument, 0, 'm'},
+        {"max-rate", required_argument, 0, 2},
+        {"min-rate", required_argument, 0, 3},
         {"open", no_argument, 0, 1},
         {0, 0, 0, 0}
     };
@@ -202,21 +203,6 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
             case 'F': /* fast */
                 ctx->flags |= FLAG_FAST;
                 break;
-            case 'm': /* max-rate */
-                ctx->flags |= FLAG_MXRATE;
-                if (optarg)
-                {
-                    ctx->max_rate = strtoull(optarg, NULL, 10);
-                    if (ctx->max_rate < 1)
-                    {
-                        ft_assert(0, "ft_nmap: Fatal error: Max rate value is less than 1.\n");
-                    }
-                }
-                else
-                {
-                    ft_assert(0, "ft_nmap: Fatal error: Max rate value is missing.\n");
-                }
-                break;
             case 1: /* open */
                 ctx->flags |= FLAG_OPEN;
                 break;
@@ -232,6 +218,36 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
                 {
                     fprintf(stderr, "ft_nmap: Warning: Speedup value is less than 1. Setting to 1.\n");
                     ctx->speedup = 1;
+                }
+                break;
+            case 2: /* max-rate */
+                ctx->flags |= FLAG_MXRATE;
+                if (optarg)
+                {
+                    ctx->max_rate = strtoull(optarg, NULL, 10);
+                    if (ctx->max_rate < 1)
+                    {
+                        ft_assert(0, "ft_nmap: Fatal error: Max rate value is less than 1.\n");
+                    }
+                }
+                else
+                {
+                    ft_assert(0, "ft_nmap: Fatal error: Max rate value is missing.\n");
+                }
+                break;
+            case 3: /* min-rate */
+                ctx->flags |= FLAG_MNRATE;
+                if (optarg)
+                {
+                    ctx->min_rate = strtoull(optarg, NULL, 10);
+                    if (ctx->min_rate < 1)
+                    {
+                        ft_assert(0, "ft_nmap: Fatal error: Max rate value is less than 1.\n");
+                    }
+                }
+                else
+                {
+                    ft_assert(0, "ft_nmap: Fatal error: Max rate value is missing.\n");
                 }
                 break;
             default:
