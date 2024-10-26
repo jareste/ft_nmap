@@ -328,7 +328,7 @@ void scan_udp_ports(const char *target_ip, int start_port, int end_port)
         perror("Socket creation failed");
         return;
     }
-    
+
     set_socket_send_buffer(sock);
     set_nonblocking(sock);
     set_socket_timeout(sock, 1, 0);  // Set timeout for receiving data
@@ -717,14 +717,33 @@ void receive_responses(int sock, const char *target_ip, int *ports_status, int s
                 }
             }
         }
-        else if (ret == 0)
+        else if (ret == 0)  // select() timeout
         {
             pthread_mutex_lock(&results_mutex);
             for (int i = 0; i < MAX_PORTS; i++)
             {
                 if (ports_status[i] == -1)
                 {
-                    results[i].is_open[scan_type - 1] = 2;
+                    // Handle timeout differently based on scan type
+                    switch (scan_type)
+                    {
+                        case S_SYN:
+                            results[i].is_open[scan_type - 1] = 2; // Filtered
+                            break;
+                        case S_ACK:
+                            results[i].is_open[scan_type - 1] = 2; // Filtered
+                            break;
+                        case S_FIN:
+                        case S_NULL:
+                        case S_XMAS:
+                        case S_UDP:
+                            results[i].is_open[scan_type - 1] = 3; // Open|Filtered
+                            break;
+                        default:
+                            results[i].is_open[scan_type - 1] = 2; // Filtered as default
+                            break;
+                    }
+
                     results[i].scan_open |= get_bitmask(scan_type);
                     ports_status[i] = -2;
                     ports_left--;
@@ -837,6 +856,9 @@ void print_scan_status(int status)
             break;
         case 2:
             printf("Filtered");
+            break;
+        case 3:
+            printf("Open|Filtered");
             break;
         default:
             printf("Unknown");
