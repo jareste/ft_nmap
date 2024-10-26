@@ -25,7 +25,7 @@
 
 typedef struct {
     const char* service; /* service name */
-    int         is_open[6]; /* 1 == open, 2 == filtered, 0 == closed */
+    int         is_open[6]; /* 1 == open, 2 == filtered, 3 == open|filtered, 0 == closed */
     int         scan_open; /* bitmask */
     bool        any_open; /* if any scan marked as open */
     bool        any_filtered; /* if any scan marked as filtered */
