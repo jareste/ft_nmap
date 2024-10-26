@@ -248,6 +248,8 @@ void shutdown_workers()
     }
 
     pthread_mutex_destroy(&results_mutex);
+    free(workers);
+    free(threads);
 }
 
 /* WORKERS END */
@@ -1198,44 +1200,50 @@ int nmap_main(nmap_context* ctx)
 
         if (worker_count > 0)
         {
+            task_param* param_syn = NULL;
+            task_param* param_null = NULL;
+            task_param* param_fin = NULL;
+            task_param* param_xmas = NULL;
+            task_param* param_ack = NULL;
+            task_param* param_udp = NULL;
             if (ctx->scans & FLAG_SYN)
             {
-                task_param *param_syn = (task_param*)malloc(sizeof(task_param));
+                param_syn = (task_param*)malloc(sizeof(task_param));
                 create_task_param(param_syn, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_SYN);
                 assign_task_to_worker(param_syn);
             }
 
             if (ctx->scans & FLAG_NULL)
             {
-                task_param *param_null = (task_param*)malloc(sizeof(task_param));
+                param_null = (task_param*)malloc(sizeof(task_param));
                 create_task_param(param_null, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_NULL);
                 assign_task_to_worker(param_null);
             }
 
             if (ctx->scans & FLAG_FIN)
             {
-                task_param *param_fin = (task_param*)malloc(sizeof(task_param));
+                param_fin = (task_param*)malloc(sizeof(task_param));
                 create_task_param(param_fin, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_FIN);
                 assign_task_to_worker(param_fin);
             }
 
             if (ctx->scans & FLAG_XMAS)
             {
-                task_param *param_xmas = (task_param*)malloc(sizeof(task_param));
+                param_xmas = (task_param*)malloc(sizeof(task_param));
                 create_task_param(param_xmas, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_XMAS);
                 assign_task_to_worker(param_xmas);
             }
 
             if (ctx->scans & FLAG_ACK)
             {
-                task_param *param_ack = (task_param*)malloc(sizeof(task_param));
+                param_ack = (task_param*)malloc(sizeof(task_param));
                 create_task_param(param_ack, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_ACK);
                 assign_task_to_worker(param_ack);
             }
 
             if (ctx->scans & FLAG_UDP)
             {
-                task_param *param_udp = (task_param*)malloc(sizeof(task_param));
+                param_udp = (task_param*)malloc(sizeof(task_param));
                 create_task_param(param_udp, source_ip, resolved_ip, ctx->port_range[0], ctx->port_range[1], S_UDP);
                 assign_task_to_worker(param_udp);
             }
@@ -1245,6 +1253,18 @@ int nmap_main(nmap_context* ctx)
             {
                 usleep(100000);
             }
+            if (param_syn)
+                free(param_syn);
+            if (param_null)
+                free(param_null);
+            if (param_fin)
+                free(param_fin);
+            if (param_xmas)
+                free(param_xmas);
+            if (param_ack)
+                free(param_ack);
+            if (param_udp)
+                free(param_udp);
         }
         else
         {

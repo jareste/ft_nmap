@@ -4,5 +4,6 @@
 #include <ft_nmap.h>
 
 void parse_args(int argc, char *argv[], nmap_context* ctx);
+void destroy_context(nmap_context* ctx);
 
 #endif

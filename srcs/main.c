@@ -27,5 +27,7 @@ int main(int argc, char **argv)
 
     nmap_main(&context);
 
+    destroy_context(&context);
+
     return 0;
 }

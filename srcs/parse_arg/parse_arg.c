@@ -272,3 +272,18 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
     if (ctx->speedup == 0) ctx->speedup = 0;
 
 }
+
+void destroy_context(nmap_context* ctx)
+{
+    target_t* target = NULL;
+    target_t *tmp = ctx->dst;
+
+    while (tmp)
+    {
+        target = tmp;
+        FT_LIST_POP(&ctx->dst, target);
+        tmp = FT_LIST_GET_NEXT(&ctx->dst, tmp);
+        free((char*)target->address);
+        free(target);
+    }
+}
