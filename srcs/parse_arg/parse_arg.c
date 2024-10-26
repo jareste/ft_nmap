@@ -258,8 +258,16 @@ void parse_args(int argc, char *argv[], nmap_context* ctx)
     /* no target provided error */
     if (ctx->dst == NULL) {fprintf(stderr, "ft_ssl: No scan dst provided.\n"); FT_NMAP_USAGE(FAILURE);}
 
-    if (ctx->scans == 0)
-        ctx->scans = FLAG_SYN | FLAG_NULL | FLAG_FIN | FLAG_XMAS | FLAG_ACK | FLAG_UDP;
+    /*
+        instead of launching all scans as subject states,
+        if no scan it's specified i'm just launching one single scan.
+        This is a design choice. And was made based on SYN being most common scan and also for
+        avoiding possible firewall issues making the program malfunction (as original nmap does).
+        It was noticed that under some circumstances, official nmap with UDP scan it's not doing
+        it properly being blocked. With my code the same behavior was noticed. So, to avoid this
+        issue, i'm just launching SYN scan by default and other scans just if specified.    
+    */
+    if (ctx->scans == 0) ctx->scans = FLAG_SYN;
 
     if (ctx->speedup == 0) ctx->speedup = 0;
 

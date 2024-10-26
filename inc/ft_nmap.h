@@ -75,7 +75,8 @@ typedef struct {
         printf("  -i, --ip                 Specify a single IP address to scan (mandatory unless --file is used)\n");\
         printf("  -f, --file               Specify a file containing IP addresses (one per line)\n");\
         printf("      --speedup            Set the number of threads to speed up the scan (default: 0, max: 250)\n");\
-        printf("  -s, --scan               Specify the type of scan to perform (e.g., SYN, NULL, ACK, FIN, XMAS, UDP)\n");\
+        printf("  -s, --scan               Specify the type of scan to perform. (e.g., SYN, NULL, ACK, FIN, XMAS, UDP)\n");\
+        printf("                           Multiple scans can be launched at once if comma separated (e.g., syn,ack)\n");\
         printf("  -O, --os                 Enable OS detection\n");             \
         printf("  -F, --fast               Enable fast scan mode\n");           \
         printf("      --max-rate           Set the maximum rate of packets to send per second\n");\
